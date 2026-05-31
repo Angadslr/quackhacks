@@ -4,7 +4,7 @@ interface StatusBarProps {
   isMonitoring: boolean
   fps: number
   isLoading: boolean
-  poseCount: number
+  personCount: number
   sourceMode: VideoSourceMode
   fileName: string | null
 }
@@ -13,7 +13,7 @@ export function StatusBar({
   isMonitoring,
   fps,
   isLoading,
-  poseCount,
+  personCount,
   sourceMode,
   fileName,
 }: StatusBarProps) {
@@ -58,7 +58,7 @@ export function StatusBar({
           <>
             <span className="font-mono text-slate-400">FPS: {fps}</span>
             <span className="font-mono text-slate-400">
-              People: {poseCount}
+              People: {personCount}
             </span>
           </>
         )}

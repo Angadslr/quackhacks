@@ -17,7 +17,9 @@ export class ReplayRecorder {
     const frame: PoseFrame = {
       timestamp,
       people: people.map((p) => ({
-        landmarks: p.landmarks.map((lm) => ({ ...lm })),
+        bbox: p.bbox ? { ...p.bbox } : null,
+        center: { ...p.center },
+        isMissing: p.isMissing,
         riskScore: p.riskScore,
       })),
       riskScore,
@@ -43,7 +45,9 @@ export class ReplayRecorder {
     const frames = this.buffer.map((f) => ({
       ...f,
       people: f.people.map((p) => ({
-        landmarks: p.landmarks.map((lm) => ({ ...lm })),
+        bbox: p.bbox ? { ...p.bbox } : null,
+        center: { ...p.center },
+        isMissing: p.isMissing,
         riskScore: p.riskScore,
       })),
     }))

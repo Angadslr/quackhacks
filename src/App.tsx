@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import type { PersonDetection } from './types/detection'
 import { AlertBanner } from './components/AlertBanner'
 import { ContributorsPanel } from './components/ContributorsPanel'
 import { Controls } from './components/Controls'
@@ -7,18 +7,24 @@ import { ReplayViewer } from './components/ReplayViewer'
 import { RiskMeter } from './components/RiskMeter'
 import { StatusBar } from './components/StatusBar'
 import { VideoFeed } from './components/VideoFeed'
-import { usePoseDetection } from './hooks/usePoseDetection'
+import { ZoneControls } from './components/ZoneControls'
+import { usePersonDetection } from './hooks/usePersonDetection'
 import { useRiskScoring } from './hooks/useRiskScoring'
 import { useVideoSource } from './hooks/useVideoSource'
+import { useZones } from './hooks/useZones'
 import type { VideoSourceMode } from './types/videoSource'
+import type { ZoneKind } from './types/zone'
 
 function App() {
   const [isMonitoring, setIsMonitoring] = useState(false)
-  const [poses, setPoses] = useState<NormalizedLandmark[][]>([])
+  const [detections, setDetections] = useState<PersonDetection[]>([])
   const [alertTime, setAlertTime] = useState<Date | null>(null)
   const [sourceMode, setSourceMode] = useState<VideoSourceMode>('webcam')
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [loopVideo, setLoopVideo] = useState(true)
+  const { zones, addZone, removeZone, clearZones } = useZones()
+  const [zoneEditing, setZoneEditing] = useState(false)
+  const [zoneDrawKind, setZoneDrawKind] = useState<ZoneKind>('monitor')
 
   const {
     videoRef,
@@ -35,23 +41,23 @@ function App() {
     loop: loopVideo,
   })
 
-  const onPoses = useCallback((next: NormalizedLandmark[][]) => {
-    setPoses(next)
+  const onDetections = useCallback((next: PersonDetection[]) => {
+    setDetections(next)
   }, [])
 
-  const onPosesWithTimestamp = useCallback(
-    (next: NormalizedLandmark[][], _timestamp: number) => {
-      onPoses(next)
+  const onDetectionsWithTimestamp = useCallback(
+    (next: PersonDetection[], _timestamp: number) => {
+      onDetections(next)
     },
-    [onPoses],
+    [onDetections],
   )
 
-  const { fps, isLoading, error: poseError, poseCount } = usePoseDetection({
+  const { fps, isLoading, error: detectionError, personCount } = usePersonDetection({
     isMonitoring,
     isReady,
     videoRef,
     useVideoTimestamp: sourceMode === 'file',
-    onPoses: onPosesWithTimestamp,
+    onDetections: onDetectionsWithTimestamp,
   })
 
   const {
@@ -64,7 +70,7 @@ function App() {
     highRiskDurationMs,
     incidents,
     resetAlert,
-  } = useRiskScoring(poses, isMonitoring)
+  } = useRiskScoring(detections, isMonitoring, zones)
 
   const handleSourceModeChange = useCallback((mode: VideoSourceMode) => {
     setIsMonitoring(false)
@@ -72,14 +78,14 @@ function App() {
     if (mode === 'webcam') {
       setVideoFile(null)
     }
-    setPoses([])
+    setDetections([])
     resetAlert()
   }, [resetAlert])
 
   const handleVideoFileChange = useCallback((file: File | null) => {
     setIsMonitoring(false)
     setVideoFile(file)
-    setPoses([])
+    setDetections([])
     resetAlert()
   }, [resetAlert])
 
@@ -103,7 +109,7 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [sourceMode, videoFile])
 
-  const error = videoError ?? poseError
+  const error = videoError ?? detectionError
 
   return (
     <div className="mx-auto min-h-screen max-w-6xl px-4 py-6">
@@ -111,7 +117,7 @@ function App() {
         isMonitoring={isMonitoring}
         fps={fps}
         isLoading={isLoading}
-        poseCount={poseCount}
+        personCount={personCount}
         sourceMode={sourceMode}
         fileName={fileName}
       />
@@ -144,6 +150,15 @@ function App() {
         </p>
       </div>
 
+      <ZoneControls
+        zones={zones}
+        editing={zoneEditing}
+        drawKind={zoneDrawKind}
+        onToggleEditing={() => setZoneEditing((prev) => !prev)}
+        onDrawKindChange={setZoneDrawKind}
+        onClear={clearZones}
+      />
+
       <main className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <VideoFeed
           videoRef={videoRef}
@@ -155,6 +170,11 @@ function App() {
           fileName={fileName}
           videoDuration={videoDuration}
           videoCurrentTime={videoCurrentTime}
+          zones={zones}
+          zoneEditing={zoneEditing}
+          zoneDrawKind={zoneDrawKind}
+          onZoneCreate={addZone}
+          onZoneRemove={removeZone}
         />
 
         <aside className="flex flex-col gap-4">
@@ -176,7 +196,12 @@ function App() {
                     key={p.id}
                     className="flex justify-between text-sm text-slate-300"
                   >
-                    <span>Person #{p.id}</span>
+                    <span>
+                      Person #{p.id}
+                      {p.isMissing && (
+                        <span className="ml-1 text-red-400">(submerged)</span>
+                      )}
+                    </span>
                     <span className="font-mono">{Math.round(p.riskScore)}%</span>
                   </li>
                 ))}

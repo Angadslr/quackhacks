@@ -6,7 +6,9 @@ export type { NormalizedLandmark }
 export const MAX_POSES = 5
 
 export interface PersonFrame {
-  landmarks: NormalizedLandmark[]
+  bbox: import('./detection').NormalizedBBox | null
+  center: { x: number; y: number }
+  isMissing: boolean
   riskScore: number
 }
 

@@ -18,10 +18,10 @@ function formatTime(timestamp: number): string {
 
 function ContributorSummary({ contributors }: { contributors: SignalBreakdown }) {
   const items = [
-    { label: 'Vertical posture', value: contributors.vertical },
-    { label: 'Arms pressing', value: contributors.arms },
+    { label: 'Submerged / lost track', value: contributors.disappearance },
     { label: 'Partial submersion', value: contributors.submersion },
     { label: 'Motion stasis', value: contributors.stasis },
+    { label: 'Surface distress', value: contributors.distress },
   ].filter((i) => i.value > 0)
 
   return (
@@ -86,8 +86,8 @@ function ReplayCanvas({ incident }: { incident: Incident }) {
         className="w-full max-w-md rounded-lg border border-slate-700"
       />
       <p className="mt-2 text-xs text-slate-500">
-        Frame {frameIndex + 1} / {incident.frames.length} — pose only, no video
-        stored
+        Frame {frameIndex + 1} / {incident.frames.length} — detection boxes only, no
+        video stored
       </p>
     </div>
   )
@@ -103,7 +103,7 @@ export function ReplayViewer({ incidents }: ReplayViewerProps) {
         Incident Replays
       </h2>
       <p className="mb-4 text-sm text-slate-500">
-        Privacy-preserving — skeleton landmarks only, no video
+        Privacy-preserving — detection boxes only, no video
       </p>
 
       {incidents.length === 0 ? (

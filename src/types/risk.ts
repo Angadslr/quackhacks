@@ -1,10 +1,10 @@
 export type RiskState = 'SAFE' | 'CAUTION' | 'DISTRESS' | 'CRITICAL'
 
 export interface SignalBreakdown {
-  vertical: number
-  arms: number
   submersion: number
   stasis: number
+  disappearance: number
+  distress: number
 }
 
 export interface RiskResult {
@@ -13,9 +13,11 @@ export interface RiskResult {
   contributors: SignalBreakdown
 }
 
-export interface PoseHistoryEntry {
+export interface DetectionHistoryEntry {
   timestamp: number
-  landmarks: import('@mediapipe/tasks-vision').NormalizedLandmark[]
+  bbox: import('./detection').NormalizedBBox
+  confidence: number
+  center: { x: number; y: number }
 }
 
 export function getRiskState(score: number): RiskState {

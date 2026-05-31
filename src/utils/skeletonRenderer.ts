@@ -1,14 +1,27 @@
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
-import {
-  isLandmarkVisible,
-  JOINT_INDICES,
-  landmarkToCanvas,
-  SKELETON_CONNECTIONS,
-} from './poseMath'
+import type { NormalizedBBox } from '../types/detection'
 import type { TrackedPerson } from '../types/person'
 import { getSkeletonColor } from '../types/risk'
 
-const VISIBILITY_THRESHOLD = 0.5
+function bboxToCanvas(
+  bbox: NormalizedBBox,
+  width: number,
+  height: number,
+  mirrored: boolean,
+): { x: number; y: number; w: number; h: number } {
+  const x = bbox.originX * width
+  const y = bbox.originY * height
+  const w = bbox.width * width
+  const h = bbox.height * height
+
+  if (!mirrored) return { x, y, w, h }
+
+  return {
+    x: width - x - w,
+    y,
+    w,
+    h,
+  }
+}
 
 export function drawVideoFrame(
   ctx: CanvasRenderingContext2D,
@@ -29,7 +42,7 @@ export function drawVideoFrame(
   ctx.restore()
 }
 
-export function drawSkeletonOnlyBackground(
+export function drawDetectionBackground(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
@@ -38,48 +51,65 @@ export function drawSkeletonOnlyBackground(
   ctx.fillRect(0, 0, width, height)
 }
 
-export function drawSkeleton(
+export function drawBoundingBox(
   ctx: CanvasRenderingContext2D,
-  landmarks: NormalizedLandmark[],
+  bbox: NormalizedBBox,
   color: string,
   width: number,
   height: number,
-  options: { mirrored?: boolean; lineWidth?: number; jointRadius?: number } = {},
+  options: {
+    mirrored?: boolean
+    dashed?: boolean
+    label?: string
+    lineWidth?: number
+  } = {},
 ): void {
-  const { mirrored = true, lineWidth = 3, jointRadius = 5 } = options
+  const { mirrored = true, dashed = false, label, lineWidth = 3 } = options
+  const rect = bboxToCanvas(bbox, width, height, mirrored)
 
   ctx.strokeStyle = color
   ctx.lineWidth = lineWidth
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
+  if (dashed) ctx.setLineDash([8, 6])
+  else ctx.setLineDash([])
 
-  for (const [a, b] of SKELETON_CONNECTIONS) {
-    const la = landmarks[a]
-    const lb = landmarks[b]
-    if (!isLandmarkVisible(la, VISIBILITY_THRESHOLD)) continue
-    if (!isLandmarkVisible(lb, VISIBILITY_THRESHOLD)) continue
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+  ctx.setLineDash([])
 
-    const pa = landmarkToCanvas(la!, width, height, mirrored)
-    const pb = landmarkToCanvas(lb!, width, height, mirrored)
-
-    ctx.beginPath()
-    ctx.moveTo(pa.x, pa.y)
-    ctx.lineTo(pb.x, pb.y)
-    ctx.stroke()
-  }
-
-  ctx.fillStyle = color
-  for (const idx of JOINT_INDICES) {
-    const lm = landmarks[idx]
-    if (!isLandmarkVisible(lm, VISIBILITY_THRESHOLD)) continue
-    const p = landmarkToCanvas(lm!, width, height, mirrored)
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, jointRadius, 0, Math.PI * 2)
-    ctx.fill()
+  if (label) {
+    ctx.fillStyle = color
+    ctx.font = '12px system-ui, sans-serif'
+    ctx.fillText(label, rect.x + 4, rect.y - 6 > 12 ? rect.y - 6 : rect.y + 14)
   }
 }
 
-export function drawMultipleSkeletons(
+export function drawMissingMarker(
+  ctx: CanvasRenderingContext2D,
+  center: { x: number; y: number },
+  color: string,
+  width: number,
+  height: number,
+  mirrored = true,
+): void {
+  const x = mirrored ? width - center.x * width : center.x * width
+  const y = center.y * height
+
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2
+  ctx.setLineDash([6, 4])
+
+  ctx.beginPath()
+  ctx.arc(x, y, 18, 0, Math.PI * 2)
+  ctx.stroke()
+
+  ctx.setLineDash([])
+  ctx.fillStyle = color
+  ctx.font = 'bold 11px system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText('?', x, y + 4)
+  ctx.textAlign = 'start'
+}
+
+export function drawMultipleDetections(
   ctx: CanvasRenderingContext2D,
   people: TrackedPerson[],
   width: number,
@@ -88,7 +118,29 @@ export function drawMultipleSkeletons(
 ): void {
   for (const person of people) {
     const color = getSkeletonColor(person.riskState)
-    drawSkeleton(ctx, person.landmarks, color, width, height, { mirrored })
+
+    if (person.isMissing || !person.bbox) {
+      drawMissingMarker(ctx, person.center, color, width, height, mirrored)
+      drawBoundingBox(
+        ctx,
+        {
+          originX: person.center.x - 0.06,
+          originY: person.center.y - 0.1,
+          width: 0.12,
+          height: 0.2,
+        },
+        color,
+        width,
+        height,
+        { mirrored, dashed: true, label: `#${person.id} submerged` },
+      )
+      continue
+    }
+
+    drawBoundingBox(ctx, person.bbox, color, width, height, {
+      mirrored,
+      label: `#${person.id}`,
+    })
   }
 }
 
@@ -103,41 +155,27 @@ export function drawSceneWithVideo(
   if (video && video.readyState >= 2) {
     drawVideoFrame(ctx, video, width, height, mirrored)
   } else {
-    drawSkeletonOnlyBackground(ctx, width, height)
+    drawDetectionBackground(ctx, width, height)
   }
 
   if (people.length > 0) {
-    drawMultipleSkeletons(ctx, people, width, height, mirrored)
-  }
-}
-
-/** @deprecated use drawSceneWithVideo */
-export function drawSkeletonWithVideo(
-  ctx: CanvasRenderingContext2D,
-  video: HTMLVideoElement | null,
-  landmarks: NormalizedLandmark[] | null,
-  color: string,
-  width: number,
-  height: number,
-): void {
-  if (video && video.readyState >= 2) {
-    drawVideoFrame(ctx, video, width, height)
-  } else {
-    drawSkeletonOnlyBackground(ctx, width, height)
-  }
-
-  if (landmarks) {
-    drawSkeleton(ctx, landmarks, color, width, height)
+    drawMultipleDetections(ctx, people, width, height, mirrored)
   }
 }
 
 export function drawReplayFrame(
   ctx: CanvasRenderingContext2D,
-  people: { landmarks: NormalizedLandmark[]; riskScore: number }[],
+  people: {
+    bbox: NormalizedBBox | null
+    center: { x: number; y: number }
+    isMissing: boolean
+    riskScore: number
+  }[],
   width: number,
   height: number,
 ): void {
-  drawSkeletonOnlyBackground(ctx, width, height)
+  drawDetectionBackground(ctx, width, height)
+
   for (const person of people) {
     const color = getSkeletonColor(
       person.riskScore >= 85
@@ -148,6 +186,48 @@ export function drawReplayFrame(
             ? 'CAUTION'
             : 'SAFE',
     )
-    drawSkeleton(ctx, person.landmarks, color, width, height)
+
+    if (person.isMissing || !person.bbox) {
+      drawMissingMarker(ctx, person.center, color, width, height, true)
+      continue
+    }
+
+    drawBoundingBox(ctx, person.bbox, color, width, height, { mirrored: true })
   }
+}
+
+/** @deprecated use drawSceneWithVideo */
+export function drawSkeletonWithVideo(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement | null,
+  _landmarks: unknown,
+  _color: string,
+  width: number,
+  height: number,
+): void {
+  if (video && video.readyState >= 2) {
+    drawVideoFrame(ctx, video, width, height)
+  } else {
+    drawDetectionBackground(ctx, width, height)
+  }
+}
+
+/** @deprecated use drawMultipleDetections */
+export function drawMultipleSkeletons(
+  ctx: CanvasRenderingContext2D,
+  people: TrackedPerson[],
+  width: number,
+  height: number,
+  mirrored = true,
+): void {
+  drawMultipleDetections(ctx, people, width, height, mirrored)
+}
+
+/** @deprecated use drawDetectionBackground */
+export function drawSkeletonOnlyBackground(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void {
+  drawDetectionBackground(ctx, width, height)
 }

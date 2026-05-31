@@ -8,10 +8,10 @@ interface ContributorsPanelProps {
 }
 
 const LABELS: { key: keyof SignalBreakdown; label: string }[] = [
-  { key: 'vertical', label: 'Vertical posture' },
-  { key: 'arms', label: 'Arms pressing down' },
+  { key: 'disappearance', label: 'Submerged / lost track' },
   { key: 'submersion', label: 'Partial submersion' },
   { key: 'stasis', label: 'Motion stasis' },
+  { key: 'distress', label: 'Surface distress posture' },
 ]
 
 export function ContributorsPanel({
