@@ -40,6 +40,9 @@ export function DrowningAlertOverlay({
           Check the pool immediately
           {timeStr ? ` · ${timeStr}` : ''}
         </p>
+        <p className="relative mt-4 text-xs leading-relaxed text-white/70">
+          Gemini analysis appears in the incident replay below.
+        </p>
       </div>
       <div className="drowning-alert-card-actions">
         <button

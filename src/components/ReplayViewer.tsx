@@ -6,6 +6,14 @@ import { drawReplayFrame } from '../utils/skeletonRenderer'
 
 interface ReplayViewerProps {
   incidents: Incident[]
+  /** Gemini narrative for the most recent incident (keyed by incident id). */
+  summariesByIncidentId?: Record<string, string>
+  /** Replay narrative (used when id map is empty). */
+  fallbackSummary?: string | null
+  /** Alert-time briefing (shown above replay summary). */
+  fallbackBriefing?: string | null
+  summaryLoading?: boolean
+  summaryError?: string | null
 }
 
 function formatTime(timestamp: number): string {
@@ -93,7 +101,14 @@ function ReplayCanvas({ incident }: { incident: Incident }) {
   )
 }
 
-export function ReplayViewer({ incidents }: ReplayViewerProps) {
+export function ReplayViewer({
+  incidents,
+  summariesByIncidentId = {},
+  fallbackSummary = null,
+  fallbackBriefing = null,
+  summaryLoading = false,
+  summaryError = null,
+}: ReplayViewerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = incidents.find((i) => i.id === selectedId) ?? null
 
@@ -160,6 +175,44 @@ export function ReplayViewer({ incidents }: ReplayViewerProps) {
                   Duration: {(selected.durationMs / 1000).toFixed(1)}s
                 </p>
                 <ContributorSummary contributors={selected.contributors} />
+                <div className="mt-3 space-y-3 border-t border-guard-maroon-light pt-3">
+                  {fallbackBriefing && (
+                    <div>
+                      <p className="text-sm font-medium text-guard-yellow">
+                        What happened
+                      </p>
+                      <p className="mt-1 text-sm leading-relaxed text-guard-cream/90">
+                        {fallbackBriefing}
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                  <p className="text-sm font-medium text-guard-yellow">
+                    Replay summary
+                  </p>
+                  {summaryLoading && (
+                    <p className="mt-1 text-xs text-guard-cream/50">
+                      Generating summary…
+                    </p>
+                  )}
+                  {(summariesByIncidentId[selected.id] ?? fallbackSummary) ? (
+                    <p className="mt-1 text-sm leading-relaxed text-guard-cream/85">
+                      {summariesByIncidentId[selected.id] ?? fallbackSummary}
+                    </p>
+                  ) : (
+                    !summaryLoading &&
+                    (summaryError ? (
+                      <p className="mt-1 text-xs leading-relaxed text-guard-cream/60">
+                        Summary unavailable — {summaryError}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-guard-cream/45">
+                        Waiting for Gemini analysis…
+                      </p>
+                    ))
+                  )}
+                  </div>
+                </div>
               </div>
             </div>
           )}

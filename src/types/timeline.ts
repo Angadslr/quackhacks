@@ -1,4 +1,4 @@
-export type TimelineEventKind = 'system' | 'risk' | 'alert' | 'info'
+export type TimelineEventKind = 'system' | 'risk' | 'alert' | 'info' | 'ai'
 
 export interface TimelineEvent {
   id: string

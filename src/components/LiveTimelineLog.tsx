@@ -12,6 +12,12 @@ function formatClock(time: Date): string {
   })
 }
 
+function kindLabel(kind: TimelineEvent['kind']): string | null {
+  if (kind === 'ai') return 'AI'
+  if (kind === 'alert') return '!'
+  return null
+}
+
 export function LiveTimelineLog({ events }: LiveTimelineLogProps) {
   return (
     <aside className="timeline-panel mx-auto flex h-full max-h-[576px] min-h-0 w-full max-w-[240px] flex-col">
@@ -24,21 +30,41 @@ export function LiveTimelineLog({ events }: LiveTimelineLogProps) {
             Events appear here while monitoring
           </li>
         ) : (
-          events.map((event) => (
-            <li
-              key={event.id}
-              className="border-b border-white/5 px-1 py-2 last:border-b-0"
-            >
-              <div className="flex items-start gap-2 text-xs">
-                <span className="shrink-0 font-mono text-guard-cream/45">
-                  {formatClock(event.time)}
-                </span>
-                <span className="leading-snug text-guard-cream/90">
-                  {event.message}
-                </span>
-              </div>
-            </li>
-          ))
+          events.map((event) => {
+            const badge = kindLabel(event.kind)
+            return (
+              <li
+                key={event.id}
+                className="border-b border-white/5 px-1 py-2 last:border-b-0"
+              >
+                <div className="flex items-start gap-2 text-xs">
+                  <span className="shrink-0 font-mono text-guard-cream/45">
+                    {formatClock(event.time)}
+                  </span>
+                  {badge && (
+                    <span
+                      className={
+                        event.kind === 'ai'
+                          ? 'shrink-0 rounded bg-guard-yellow/20 px-1 py-0.5 text-[10px] font-semibold uppercase text-guard-yellow'
+                          : 'shrink-0 font-bold text-guard-red'
+                      }
+                    >
+                      {badge}
+                    </span>
+                  )}
+                  <span
+                    className={
+                      event.kind === 'ai'
+                        ? 'leading-snug text-guard-cream'
+                        : 'leading-snug text-guard-cream/90'
+                    }
+                  >
+                    {event.message}
+                  </span>
+                </div>
+              </li>
+            )
+          })
         )}
       </ul>
     </aside>

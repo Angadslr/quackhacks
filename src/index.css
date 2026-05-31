@@ -105,7 +105,6 @@ body {
   flex-direction: column;
   justify-content: space-between;
   width: 11.5rem;
-  height: min(82vh, 36rem);
   max-height: calc(100vh - 6rem);
   padding: 1.25rem 1rem;
   border-radius: 0.75rem;
@@ -130,7 +129,6 @@ body {
 
 .drowning-alert-card-body {
   position: relative;
-  flex: 1;
 }
 
 .drowning-alert-card-actions {

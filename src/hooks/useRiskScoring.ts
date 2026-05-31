@@ -86,7 +86,7 @@ export function useRiskScoring(
     if (isMonitoring && !wasMonitoringRef.current) {
       resetSession()
     } else if (!isMonitoring && wasMonitoringRef.current) {
-      resetAlert()
+      alertSoundRef.current.stop()
       setActivePeople([])
     }
     wasMonitoringRef.current = isMonitoring
