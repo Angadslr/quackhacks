@@ -5,7 +5,8 @@ import type { Zone, ZoneKind } from '../types/zone'
 
 interface VideoFeedProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
-  people: TrackedPerson[]
+  activePeople: TrackedPerson[]
+  rosterCount: number
   isMonitoring: boolean
   mirrored: boolean
   sourceMode: VideoSourceMode
@@ -22,7 +23,8 @@ interface VideoFeedProps {
 
 export function VideoFeed({
   videoRef,
-  people,
+  activePeople,
+  rosterCount,
   isMonitoring,
   mirrored,
   sourceMode,
@@ -39,7 +41,8 @@ export function VideoFeed({
   return (
     <SkeletonCanvas
       videoRef={videoRef}
-      people={people}
+      people={activePeople}
+      rosterCount={rosterCount}
       isMonitoring={isMonitoring}
       mirrored={mirrored}
       sourceMode={sourceMode}

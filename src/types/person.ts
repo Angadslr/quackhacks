@@ -8,6 +8,8 @@ export interface TrackedPerson {
   confidence: number
   center: { x: number; y: number }
   isMissing: boolean
+  /** Currently receiving detections this frame. */
+  isTracked: boolean
   riskScore: number
   riskState: RiskState
   contributors: SignalBreakdown

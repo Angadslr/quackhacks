@@ -11,6 +11,7 @@ const CANVAS_HEIGHT = 480
 interface SkeletonCanvasProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
   people: TrackedPerson[]
+  rosterCount: number
   isMonitoring: boolean
   mirrored: boolean
   sourceMode: VideoSourceMode
@@ -34,6 +35,7 @@ function formatTime(seconds: number): string {
 export function SkeletonCanvas({
   videoRef,
   people,
+  rosterCount,
   isMonitoring,
   mirrored,
   sourceMode,
@@ -98,7 +100,7 @@ export function SkeletonCanvas({
       : 'Click Start Monitoring to begin'
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-slate-700 bg-slate-900">
+    <div className="relative overflow-hidden rounded-lg border-2 border-guard-maroon-light bg-guard-maroon-deep shadow-inner">
       <video
         ref={videoRef}
         className="hidden"
@@ -123,17 +125,17 @@ export function SkeletonCanvas({
         />
       )}
       {!isMonitoring && !isReady && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-          <p className="px-4 text-center text-slate-400">{placeholder}</p>
+        <div className="absolute inset-0 flex items-center justify-center bg-guard-maroon-deep/90">
+          <p className="px-4 text-center text-guard-cream/60">{placeholder}</p>
         </div>
       )}
-      {isMonitoring && people.length > 0 && (
-        <div className="absolute left-2 top-2 rounded bg-black/60 px-2 py-1 text-xs text-white">
-          {people.length} {people.length === 1 ? 'person' : 'people'} tracked
+      {isMonitoring && rosterCount > 0 && (
+        <div className="absolute left-2 top-2 rounded border border-guard-red/50 bg-guard-maroon/90 px-2 py-1 text-xs font-medium text-guard-yellow">
+          {rosterCount} {rosterCount === 1 ? 'person' : 'people'} detected
         </div>
       )}
       {sourceMode === 'file' && fileName && (
-        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded bg-black/60 px-2 py-1 text-xs text-white">
+        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded border border-guard-maroon-light bg-guard-maroon/90 px-2 py-1 text-xs text-guard-cream">
           <span className="truncate">{fileName}</span>
           {isMonitoring && videoDuration > 0 && (
             <span className="ml-2 shrink-0 font-mono">

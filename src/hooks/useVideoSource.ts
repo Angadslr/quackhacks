@@ -5,7 +5,7 @@ interface UseVideoSourceOptions {
   mode: VideoSourceMode
   videoFile: File | null
   isMonitoring: boolean
-  loop: boolean
+  onVideoEnded?: () => void
 }
 
 interface UseVideoSourceResult {
@@ -22,8 +22,10 @@ export function useVideoSource({
   mode,
   videoFile,
   isMonitoring,
-  loop,
+  onVideoEnded,
 }: UseVideoSourceOptions): UseVideoSourceResult {
+  const onVideoEndedRef = useRef(onVideoEnded)
+  onVideoEndedRef.current = onVideoEnded
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const blobUrlRef = useRef<string | null>(null)
@@ -122,7 +124,7 @@ export function useVideoSource({
       video.addEventListener('loadedmetadata', onLoaded)
       video.addEventListener('error', onError)
       video.src = url
-      video.loop = loop
+      video.loop = false
       video.muted = true
       video.load()
     }
@@ -134,7 +136,7 @@ export function useVideoSource({
       cancelAnimationFrame(rafId)
       cleanupListeners()
     }
-  }, [mode, videoFile, loop, revokeBlob, resetVideoElement])
+  }, [mode, videoFile, revokeBlob, resetVideoElement])
 
   // Webcam stream
   useEffect(() => {
@@ -201,7 +203,7 @@ export function useVideoSource({
     const video = videoRef.current
     if (!video || mode !== 'file' || !isReady) return
 
-    video.loop = loop
+    video.loop = false
 
     if (isMonitoring) {
       video.currentTime = 0
@@ -213,7 +215,21 @@ export function useVideoSource({
       video.currentTime = 0
       setVideoCurrentTime(0)
     }
-  }, [mode, isMonitoring, isReady, loop, videoFile])
+  }, [mode, isMonitoring, isReady, videoFile])
+
+  // Stop after one play-through (no loop).
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || mode !== 'file') return
+
+    const onEnded = () => {
+      video.pause()
+      onVideoEndedRef.current?.()
+    }
+
+    video.addEventListener('ended', onEnded)
+    return () => video.removeEventListener('ended', onEnded)
+  }, [mode, isReady, videoFile])
 
   // Track playback progress for file mode
   useEffect(() => {

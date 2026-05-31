@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { PersonDetection } from './types/detection'
 import { AlertBanner } from './components/AlertBanner'
-import { ContributorsPanel } from './components/ContributorsPanel'
 import { Controls } from './components/Controls'
+import { DevTools } from './components/DevTools'
+import { PeopleList } from './components/PeopleList'
 import { ReplayViewer } from './components/ReplayViewer'
-import { RiskMeter } from './components/RiskMeter'
 import { StatusBar } from './components/StatusBar'
 import { VideoFeed } from './components/VideoFeed'
-import { ZoneControls } from './components/ZoneControls'
 import { usePersonDetection } from './hooks/usePersonDetection'
 import { useRiskScoring } from './hooks/useRiskScoring'
 import { useVideoSource } from './hooks/useVideoSource'
@@ -21,10 +20,13 @@ function App() {
   const [alertTime, setAlertTime] = useState<Date | null>(null)
   const [sourceMode, setSourceMode] = useState<VideoSourceMode>('webcam')
   const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [loopVideo, setLoopVideo] = useState(true)
   const { zones, addZone, removeZone, clearZones } = useZones()
   const [zoneEditing, setZoneEditing] = useState(false)
   const [zoneDrawKind, setZoneDrawKind] = useState<ZoneKind>('monitor')
+
+  const handleVideoEnded = useCallback(() => {
+    setIsMonitoring(false)
+  }, [])
 
   const {
     videoRef,
@@ -38,7 +40,7 @@ function App() {
     mode: sourceMode,
     videoFile,
     isMonitoring,
-    loop: loopVideo,
+    onVideoEnded: handleVideoEnded,
   })
 
   const onDetections = useCallback((next: PersonDetection[]) => {
@@ -62,14 +64,12 @@ function App() {
 
   const {
     people,
-    riskScore,
+    activePeople,
     riskState,
-    contributors,
-    highestRiskPersonId,
     isAlerting,
-    highRiskDurationMs,
     incidents,
     resetAlert,
+    resetSession,
   } = useRiskScoring(detections, isMonitoring, zones)
 
   const handleSourceModeChange = useCallback((mode: VideoSourceMode) => {
@@ -79,15 +79,15 @@ function App() {
       setVideoFile(null)
     }
     setDetections([])
-    resetAlert()
-  }, [resetAlert])
+    resetSession()
+  }, [resetSession])
 
   const handleVideoFileChange = useCallback((file: File | null) => {
     setIsMonitoring(false)
     setVideoFile(file)
     setDetections([])
-    resetAlert()
-  }, [resetAlert])
+    resetSession()
+  }, [resetSession])
 
   useEffect(() => {
     if (isAlerting && !alertTime) {
@@ -123,20 +123,18 @@ function App() {
       />
 
       {error && (
-        <div className="mt-4 rounded-lg border border-red-800 bg-red-950/50 px-4 py-3 text-red-300">
+        <div className="mt-4 rounded-lg border-2 border-guard-red bg-guard-red/20 px-4 py-3 text-guard-cream">
           {error}
         </div>
       )}
 
-      <div className="mt-4 rounded-lg border border-slate-700 bg-slate-900 p-4">
-        <p className="mb-3 text-sm font-medium text-slate-300">Input source</p>
+      <div className="guard-panel mt-4 p-4">
+        <p className="mb-3 text-sm font-medium text-guard-yellow">Input source</p>
         <Controls
           sourceMode={sourceMode}
           onSourceModeChange={handleSourceModeChange}
           videoFile={videoFile}
           onVideoFileChange={handleVideoFileChange}
-          loopVideo={loopVideo}
-          onLoopVideoChange={setLoopVideo}
           fileName={fileName}
           isMonitoring={isMonitoring}
           isLoading={isLoading}
@@ -145,24 +143,16 @@ function App() {
           onStop={() => setIsMonitoring(false)}
           onResetIncident={resetAlert}
         />
-        <p className="mt-2 text-xs text-slate-600">
-          Press Space to start/stop · Switch to <strong className="text-slate-400">Video File</strong> to test pool footage
+        <p className="mt-2 text-xs text-guard-cream/40">
+          Press Space to start/stop · Switch to <strong className="text-guard-pool">Video File</strong> to test pool footage
         </p>
       </div>
-
-      <ZoneControls
-        zones={zones}
-        editing={zoneEditing}
-        drawKind={zoneDrawKind}
-        onToggleEditing={() => setZoneEditing((prev) => !prev)}
-        onDrawKindChange={setZoneDrawKind}
-        onClear={clearZones}
-      />
 
       <main className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <VideoFeed
           videoRef={videoRef}
-          people={people}
+          activePeople={activePeople}
+          rosterCount={people.length}
           isMonitoring={isMonitoring}
           mirrored={mirrored}
           sourceMode={sourceMode}
@@ -178,42 +168,7 @@ function App() {
         />
 
         <aside className="flex flex-col gap-4">
-          <RiskMeter score={riskScore} state={riskState} />
-          <ContributorsPanel
-            contributors={contributors}
-            score={riskScore}
-            personId={highestRiskPersonId}
-            peopleCount={people.length}
-          />
-          {people.length > 1 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900 p-3">
-              <p className="mb-2 text-xs font-medium text-slate-400">
-                Per-person risk
-              </p>
-              <ul className="space-y-1">
-                {people.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex justify-between text-sm text-slate-300"
-                  >
-                    <span>
-                      Person #{p.id}
-                      {p.isMissing && (
-                        <span className="ml-1 text-red-400">(submerged)</span>
-                      )}
-                    </span>
-                    <span className="font-mono">{Math.round(p.riskScore)}%</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {isMonitoring && riskScore > 65 && !isAlerting && (
-            <p className="text-xs text-slate-500">
-              High risk for {(highRiskDurationMs / 1000).toFixed(1)}s — alert at
-              4s
-            </p>
-          )}
+          <PeopleList people={people} />
         </aside>
       </main>
 
@@ -228,6 +183,15 @@ function App() {
       <div className="mt-6">
         <ReplayViewer incidents={incidents} />
       </div>
+
+      <DevTools
+        zones={zones}
+        editing={zoneEditing}
+        drawKind={zoneDrawKind}
+        onToggleEditing={() => setZoneEditing((prev) => !prev)}
+        onDrawKindChange={setZoneDrawKind}
+        onClear={clearZones}
+      />
     </div>
   )
 }

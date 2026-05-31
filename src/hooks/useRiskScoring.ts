@@ -15,6 +15,7 @@ const HISTORY_DURATION_MS = 5000
 
 interface UseRiskScoringResult {
   people: TrackedPerson[]
+  activePeople: TrackedPerson[]
   riskScore: number
   riskState: RiskState
   contributors: RiskResult['contributors']
@@ -23,6 +24,7 @@ interface UseRiskScoringResult {
   highRiskDurationMs: number
   incidents: Incident[]
   resetAlert: () => void
+  resetSession: () => void
 }
 
 export function useRiskScoring(
@@ -34,10 +36,13 @@ export function useRiskScoring(
   const alertSoundRef = useRef(new AlertSound())
   const trackerRef = useRef(new DetectionTracker())
   const historyMapRef = useRef<Map<number, DetectionHistoryEntry[]>>(new Map())
+  const rosterRef = useRef<Map<number, TrackedPerson>>(new Map())
+  const wasMonitoringRef = useRef(false)
   const hasTriggeredAlertRef = useRef(false)
   const peakAtAlertRef = useRef<{ person: TrackedPerson } | null>(null)
 
   const [people, setPeople] = useState<TrackedPerson[]>([])
+  const [activePeople, setActivePeople] = useState<TrackedPerson[]>([])
   const [riskScore, setRiskScore] = useState(0)
   const [riskState, setRiskState] = useState<RiskState>('SAFE')
   const [contributors, setContributors] = useState<RiskResult['contributors']>({
@@ -61,25 +66,41 @@ export function useRiskScoring(
     alertSoundRef.current.stop()
   }, [])
 
+  const resetSession = useCallback(() => {
+    resetAlert()
+    trackerRef.current.reset()
+    historyMapRef.current.clear()
+    rosterRef.current.clear()
+    setPeople([])
+    setActivePeople([])
+    setRiskScore(0)
+    setRiskState('SAFE')
+    setContributors({ submersion: 0, stasis: 0, disappearance: 0, distress: 0 })
+    setHighestRiskPersonId(null)
+    setHighRiskDurationMs(0)
+  }, [resetAlert])
+
+  // New monitoring run → fresh tracker; stop → keep roster on screen.
   useEffect(() => {
-    if (!isMonitoring) {
+    if (isMonitoring && !wasMonitoringRef.current) {
+      resetSession()
+    } else if (!isMonitoring && wasMonitoringRef.current) {
       resetAlert()
-      trackerRef.current.reset()
-      historyMapRef.current.clear()
-      setPeople([])
-      setRiskScore(0)
-      setRiskState('SAFE')
-      setContributors({ submersion: 0, stasis: 0, disappearance: 0, distress: 0 })
-      setHighestRiskPersonId(null)
-      setHighRiskDurationMs(0)
-      return
+      setActivePeople([])
     }
+    wasMonitoringRef.current = isMonitoring
+  }, [isMonitoring, resetSession, resetAlert])
+
+  useEffect(() => {
+    if (!isMonitoring) return
 
     const now = performance.now()
     const trackedRaw = trackerRef.current.assignAndTrack(detections, now, zones)
-    const tracked: TrackedPerson[] = []
+    const active: TrackedPerson[] = []
+    const activeIds = new Set<number>()
 
     for (const item of trackedRaw) {
+      activeIds.add(item.id)
       const history = historyMapRef.current.get(item.id) ?? []
       const result = computeRisk(
         {
@@ -110,20 +131,38 @@ export function useRiskScoring(
         )
       }
 
-      tracked.push({
+      const person: TrackedPerson = {
         id: item.id,
         bbox: item.bbox,
         confidence: item.confidence,
         center: item.center,
         isMissing: item.isMissing,
+        isTracked: true,
         riskScore: result.score,
         riskState: result.state,
         contributors: result.contributors,
-      })
+      }
+      active.push(person)
+      rosterRef.current.set(item.id, person)
     }
 
-    tracked.sort((a, b) => b.riskScore - a.riskScore)
-    const highest = tracked[0]
+    const roster: TrackedPerson[] = []
+    for (const [, entry] of rosterRef.current) {
+      if (activeIds.has(entry.id)) {
+        roster.push(entry)
+      } else {
+        roster.push({
+          ...entry,
+          isTracked: false,
+          bbox: null,
+          isMissing: false,
+        })
+      }
+    }
+    roster.sort((a, b) => a.id - b.id)
+
+    const activeSorted = [...active].sort((a, b) => b.riskScore - a.riskScore)
+    const highest = activeSorted[0]
     const maxScore = highest?.riskScore ?? 0
     const maxState = highest?.riskState ?? 'SAFE'
     const maxContributors = highest?.contributors ?? {
@@ -135,7 +174,7 @@ export function useRiskScoring(
 
     recorderRef.current.pushFrame(
       now,
-      tracked.map((p) => ({
+      active.map((p) => ({
         bbox: p.bbox,
         center: p.center,
         isMissing: p.isMissing,
@@ -144,7 +183,8 @@ export function useRiskScoring(
       maxScore,
     )
 
-    setPeople(tracked)
+    setPeople(roster)
+    setActivePeople(activeSorted)
     setRiskScore(maxScore)
     setRiskState(maxState)
     setContributors(maxContributors)
@@ -181,7 +221,7 @@ export function useRiskScoring(
       setIsAlerting(false)
       alertSoundRef.current.stop()
     }
-  }, [detections, isMonitoring, zones, resetAlert])
+  }, [detections, isMonitoring, zones])
 
   useEffect(() => {
     return () => {
@@ -191,6 +231,7 @@ export function useRiskScoring(
 
   return {
     people,
+    activePeople,
     riskScore,
     riskState,
     contributors,
@@ -199,5 +240,6 @@ export function useRiskScoring(
     highRiskDurationMs,
     incidents,
     resetAlert,
+    resetSession,
   }
 }

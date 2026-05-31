@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Zone } from '../types/zone'
 
-const STORAGE_KEY = 'poolguard.zones.v1'
+const STORAGE_KEY = 'myguard.zones.v1'
 
 function loadZones(): Zone[] {
   try {

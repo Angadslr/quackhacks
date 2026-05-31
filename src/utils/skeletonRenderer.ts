@@ -47,7 +47,7 @@ export function drawDetectionBackground(
   width: number,
   height: number,
 ): void {
-  ctx.fillStyle = '#0f172a'
+  ctx.fillStyle = '#1a0b10'
   ctx.fillRect(0, 0, width, height)
 }
 

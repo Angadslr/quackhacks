@@ -1,13 +1,58 @@
 @import 'tailwindcss';
 
+@theme {
+  --color-guard-maroon: #3a1520;
+  --color-guard-maroon-deep: #1a0b10;
+  --color-guard-maroon-mid: #4d1c28;
+  --color-guard-maroon-light: #6d2a3c;
+  --color-guard-red: #ef4444;
+  --color-guard-red-dark: #b91c1c;
+  --color-guard-yellow: #fbbf24;
+  --color-guard-yellow-dark: #d97706;
+  --color-guard-cream: #fef9e7;
+  --color-guard-pool: #38bdf8;
+  --color-guard-white: #f8fafc;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #020617;
-  color: #f1f5f9;
+  background: linear-gradient(
+    160deg,
+    var(--color-guard-maroon-deep) 0%,
+    #2a1018 35%,
+    var(--color-guard-maroon) 70%,
+    #451a25 100%
+  );
+  background-attachment: fixed;
+  color: var(--color-guard-white);
   font-family: system-ui, -apple-system, sans-serif;
 }
 
 #root {
   min-height: 100vh;
+}
+
+.guard-panel {
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-guard-maroon-light);
+  background-color: color-mix(in srgb, var(--color-guard-maroon-mid) 85%, #1a0b10);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-guard-red) 15%, transparent);
+}
+
+.guard-btn-primary {
+  border-radius: 0.5rem;
+  background-color: var(--color-guard-red);
+  color: white;
+  font-weight: 500;
+  transition: background-color 0.15s;
+}
+
+.guard-btn-primary:hover:not(:disabled) {
+  background-color: var(--color-guard-red-dark);
+}
+
+.guard-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

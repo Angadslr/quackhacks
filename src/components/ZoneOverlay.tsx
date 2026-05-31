@@ -21,15 +21,15 @@ const MIN_SIZE = 0.03
 function kindStyles(kind: ZoneKind): { border: string; bg: string; text: string } {
   if (kind === 'safe') {
     return {
-      border: 'border-emerald-400',
-      bg: 'bg-emerald-400/15',
-      text: 'text-emerald-300',
+      border: 'border-guard-pool',
+      bg: 'bg-guard-pool/15',
+      text: 'text-guard-pool',
     }
   }
   return {
-    border: 'border-red-400',
-    bg: 'bg-red-400/15',
-    text: 'text-red-300',
+    border: 'border-guard-red',
+    bg: 'bg-guard-red/15',
+    text: 'text-guard-red',
   }
 }
 
@@ -120,7 +120,7 @@ export function ZoneOverlay({
                 onRemove(zone.id)
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="pointer-events-auto absolute right-0 top-0 flex h-5 w-5 items-center justify-center bg-black/60 text-xs text-white hover:bg-red-600"
+              className="pointer-events-auto absolute right-0 top-0 flex h-5 w-5 items-center justify-center bg-black/60 text-xs text-white hover:bg-guard-red"
               aria-label="Delete zone"
             >
               ×
@@ -133,8 +133,8 @@ export function ZoneOverlay({
         <div
           className={`absolute border-2 border-dashed ${
             drawKind === 'safe'
-              ? 'border-emerald-300 bg-emerald-300/10'
-              : 'border-red-300 bg-red-300/10'
+              ? 'border-guard-pool bg-guard-pool/10'
+              : 'border-guard-red bg-guard-red/10'
           }`}
           style={{
             left: `${draft.x * 100}%`,
