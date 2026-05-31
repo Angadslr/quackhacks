@@ -10,7 +10,8 @@ import { ReplayRecorder } from '../utils/replayRecorder'
 import type { Zone } from '../types/zone'
 
 const ALERT_THRESHOLD = 65
-const ALERT_DURATION_MS = 4000
+/** Brief spike above threshold is enough to latch the alert until dismissed */
+const ALERT_DURATION_MS = 400
 const HISTORY_DURATION_MS = 5000
 
 interface UseRiskScoringResult {
@@ -214,12 +215,9 @@ export function useRiskScoring(
         )
         setIncidents(recorderRef.current.getIncidents())
       }
-    } else {
-      hasTriggeredAlertRef.current = false
+    } else if (!hasTriggeredAlertRef.current) {
       peakAtAlertRef.current = null
       recorderRef.current.resetHighRiskTracking()
-      setIsAlerting(false)
-      alertSoundRef.current.stop()
     }
   }, [detections, isMonitoring, zones])
 

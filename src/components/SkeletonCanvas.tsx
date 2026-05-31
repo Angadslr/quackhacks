@@ -5,8 +5,8 @@ import type { Zone, ZoneKind } from '../types/zone'
 import { drawSceneWithVideo, drawVideoFrame } from '../utils/skeletonRenderer'
 import { ZoneOverlay } from './ZoneOverlay'
 
-const CANVAS_WIDTH = 960
-const CANVAS_HEIGHT = 720
+const CANVAS_WIDTH = 768
+const CANVAS_HEIGHT = 576
 
 interface SkeletonCanvasProps {
   videoRef: React.RefObject<HTMLVideoElement | null>

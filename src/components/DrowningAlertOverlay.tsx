@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom'
+
 interface DrowningAlertOverlayProps {
   alertTime: Date | null
   onDismiss: () => void
@@ -15,43 +17,47 @@ export function DrowningAlertOverlay({
       })
     : ''
 
-  return (
-    <>
-      <div
-        className="drowning-flash pointer-events-none fixed inset-0 z-40"
-        aria-hidden
-      />
-      <div className="fixed inset-x-0 top-0 z-50 px-3 pt-3">
-        <div
-          role="alert"
-          className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3 rounded-lg border-2 border-guard-red bg-guard-maroon-deep/95 px-4 py-3 shadow-lg shadow-guard-red/30 backdrop-blur-sm"
+  return createPortal(
+    <div
+      className="drowning-alert-panel"
+      role="alertdialog"
+      aria-modal="false"
+      aria-labelledby="drowning-alert-title"
+      aria-describedby="drowning-alert-desc"
+    >
+      <div className="drowning-alert-panel-noise" aria-hidden />
+      <div className="drowning-alert-card-body">
+        <p
+          id="drowning-alert-title"
+          className="relative text-base font-bold uppercase leading-snug tracking-wide text-white"
         >
-          <div className="min-w-0 flex-1">
-            <p className="text-base font-bold uppercase tracking-wide text-guard-red">
-              Possible drowning detected
-            </p>
-            <p className="text-sm text-guard-cream">
-              Check the pool immediately
-              {timeStr ? ` · ${timeStr}` : ''}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="rounded-lg border border-guard-maroon-light px-4 py-2 text-sm font-medium text-guard-cream transition hover:border-guard-cream/40 hover:bg-guard-maroon-mid"
-            >
-              Dismiss
-            </button>
-            <a
-              href="tel:911"
-              className="guard-btn-primary inline-flex items-center px-4 py-2 text-sm"
-            >
-              Contact emergency services
-            </a>
-          </div>
-        </div>
+          Possible drowning detected
+        </p>
+        <p
+          id="drowning-alert-desc"
+          className="relative mt-3 text-sm leading-relaxed text-white/90"
+        >
+          Check the pool immediately
+          {timeStr ? ` · ${timeStr}` : ''}
+        </p>
       </div>
-    </>
+      <div className="drowning-alert-card-actions">
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="relative w-full rounded-lg border-2 border-white/50 bg-black/25 px-3 py-2.5 text-sm font-medium text-white transition hover:border-white hover:bg-black/40"
+        >
+          Dismiss
+        </button>
+        <a
+          href="tel:911"
+          onClick={onDismiss}
+          className="relative flex w-full items-center justify-center rounded-lg border-2 border-white bg-white px-3 py-2.5 text-center text-sm font-semibold leading-snug text-guard-red-dark transition hover:bg-guard-cream"
+        >
+          Contact emergency services
+        </a>
+      </div>
+    </div>,
+    document.body,
   )
 }

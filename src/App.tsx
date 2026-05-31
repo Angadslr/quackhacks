@@ -153,7 +153,7 @@ function App() {
         />
       )}
 
-      <div className="controls-bar flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+      <div className="controls-bar flex flex-nowrap items-center justify-between gap-2 px-3 py-2">
         <StatusBar
           isMonitoring={isMonitoring}
           fps={fps}
@@ -184,7 +184,8 @@ function App() {
         </div>
       )}
 
-      <main className="mt-3 grid min-h-0 flex-1 gap-3 lg:grid-cols-[1fr_280px] xl:grid-cols-[1fr_300px]">
+      <main className="mx-auto mt-3 grid min-h-0 w-[80%] max-w-[1020px] flex-1 gap-3 lg:grid-cols-[minmax(0,768px)_224px] xl:grid-cols-[minmax(0,768px)_240px]">
+        <div className="mx-auto w-full max-w-[768px]">
         <VideoFeed
           videoRef={videoRef}
           activePeople={activePeople}
@@ -202,6 +203,7 @@ function App() {
           onZoneCreate={addZone}
           onZoneRemove={removeZone}
         />
+        </div>
 
         <LiveTimelineLog events={events} />
       </main>

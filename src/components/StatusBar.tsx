@@ -29,6 +29,12 @@ export function StatusBar({
         : 'Video file'
       : 'Webcam'
 
+  const statusLabel = isMonitoring
+    ? isAlerting
+      ? 'ALERT'
+      : riskState
+    : 'OFF'
+
   return (
     <header className="shrink-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -42,20 +48,19 @@ export function StatusBar({
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
-          {isAlerting && (
-            <span className="font-semibold text-guard-red">
-              ⚠ Alert active
-            </span>
-          )}
-          {!isAlerting && isMonitoring && (
-            <span className="text-guard-cream/60">{riskState}</span>
-          )}
+          <span
+            className={`inline-block min-w-[5.5rem] font-medium ${
+              isAlerting ? 'text-guard-red' : 'text-guard-cream/60'
+            }`}
+          >
+            {statusLabel}
+          </span>
           <span className="hidden max-w-[140px] truncate text-guard-pool/80 md:inline">
             {sourceLabel}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-[5.5rem] items-center gap-2">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${
+              className={`h-2.5 w-2.5 shrink-0 rounded-full ${
                 isMonitoring
                   ? isLoading
                     ? 'animate-pulse bg-guard-yellow'
@@ -71,14 +76,12 @@ export function StatusBar({
                   : 'Off duty'}
             </span>
           </div>
-          {isMonitoring && !isLoading && (
-            <>
-              <span className="font-mono text-guard-cream/70">FPS: {fps}</span>
-              <span className="font-mono text-guard-cream/70">
-                People: {personCount}
-              </span>
-            </>
-          )}
+          <span className="inline-block min-w-[4.5rem] font-mono tabular-nums text-guard-cream/70">
+            FPS: {isMonitoring && !isLoading ? fps : '—'}
+          </span>
+          <span className="inline-block min-w-[5.75rem] font-mono tabular-nums text-guard-cream/70">
+            People: {isMonitoring && !isLoading ? personCount : '—'}
+          </span>
         </div>
       </div>
     </header>

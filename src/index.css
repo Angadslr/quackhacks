@@ -69,6 +69,7 @@ body {
 }
 
 .controls-bar {
+  min-height: 3.25rem;
   border-radius: 0.5rem;
   border: 1px solid color-mix(in srgb, var(--color-guard-maroon-light) 60%, white);
   background-color: color-mix(in srgb, var(--color-guard-maroon-deep) 82%, transparent);
@@ -92,16 +93,50 @@ body {
   cursor: not-allowed;
 }
 
-@keyframes drowning-flash-pulse {
-  0%,
-  100% {
-    background-color: rgba(185, 28, 28, 0.12);
-  }
-  50% {
-    background-color: rgba(185, 28, 28, 0.28);
-  }
+.drowning-alert-panel {
+  position: fixed;
+  left: max(
+    0.75rem,
+    calc((100vw - min(100vw * 0.8, 1020px)) / 2 - 12.25rem)
+  );
+  top: 5.25rem;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 11.5rem;
+  height: min(82vh, 36rem);
+  max-height: calc(100vh - 6rem);
+  padding: 1.25rem 1rem;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(254, 200, 200, 0.45);
+  background: rgba(185, 28, 28, 0.94);
+  text-align: left;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  pointer-events: auto;
+  isolation: isolate;
 }
 
-.drowning-flash {
-  animation: drowning-flash-pulse 1.2s ease-in-out infinite;
+.drowning-alert-panel-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  mix-blend-mode: overlay;
+}
+
+.drowning-alert-card-body {
+  position: relative;
+  flex: 1;
+}
+
+.drowning-alert-card-actions {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
 }

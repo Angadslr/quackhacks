@@ -30,7 +30,7 @@ export function getRiskState(score: number): RiskState {
 export function getSkeletonColor(state: RiskState): string {
   switch (state) {
     case 'SAFE':
-      return '#38bdf8'
+      return '#22c55e'
     case 'CAUTION':
       return '#fbbf24'
     case 'DISTRESS':

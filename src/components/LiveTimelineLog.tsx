@@ -1,5 +1,4 @@
 import type { TimelineEvent } from '../types/timeline'
-import { riskScoreColor } from '../utils/riskColor'
 
 interface LiveTimelineLogProps {
   events: TimelineEvent[]
@@ -15,7 +14,7 @@ function formatClock(time: Date): string {
 
 export function LiveTimelineLog({ events }: LiveTimelineLogProps) {
   return (
-    <aside className="timeline-panel flex h-full min-h-0 flex-col">
+    <aside className="timeline-panel mx-auto flex h-full max-h-[576px] min-h-0 w-full max-w-[240px] flex-col">
       <h2 className="shrink-0 border-b border-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-guard-cream/80">
         Live timeline log
       </h2>
@@ -38,14 +37,6 @@ export function LiveTimelineLog({ events }: LiveTimelineLogProps) {
                   {event.message}
                 </span>
               </div>
-              {event.riskScore != null && (
-                <p
-                  className="mt-1 pl-[3.25rem] font-mono text-sm font-semibold"
-                  style={{ color: riskScoreColor(event.riskScore) }}
-                >
-                  Risk: {event.riskScore}%
-                </p>
-              )}
             </li>
           ))
         )}

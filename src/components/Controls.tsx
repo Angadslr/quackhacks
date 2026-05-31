@@ -84,28 +84,30 @@ export function Controls({
         </>
       )}
 
-      {!isMonitoring ? (
-        <button
-          type="button"
-          onClick={onStart}
-          disabled={isLoading || !canStart}
-          className="guard-btn-primary rounded px-3 py-1.5 text-xs sm:text-sm"
-        >
-          {isLoading
-            ? 'Loading…'
-            : sourceMode === 'file' && !isReady && videoFile
-              ? 'Loading video…'
-              : startLabel}
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={onStop}
-          className="rounded border border-guard-yellow bg-guard-yellow/20 px-3 py-1.5 text-xs font-medium text-guard-yellow sm:text-sm"
-        >
-          Stop
-        </button>
-      )}
+      <span className="inline-flex min-w-[7.25rem] justify-end">
+        {!isMonitoring ? (
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={isLoading || !canStart}
+            className="guard-btn-primary rounded px-3 py-1.5 text-xs sm:text-sm"
+          >
+            {isLoading
+              ? 'Loading…'
+              : sourceMode === 'file' && !isReady && videoFile
+                ? 'Loading video…'
+                : startLabel}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onStop}
+            className="rounded border border-guard-yellow bg-guard-yellow/20 px-3 py-1.5 text-xs font-medium text-guard-yellow sm:text-sm"
+          >
+            Stop
+          </button>
+        )}
+      </span>
     </div>
   )
 }
