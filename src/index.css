@@ -17,14 +17,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(
-    160deg,
-    var(--color-guard-maroon-deep) 0%,
-    #2a1018 35%,
-    var(--color-guard-maroon) 70%,
-    #451a25 100%
-  );
-  background-attachment: fixed;
+  background-color: #1a0b10;
   color: var(--color-guard-white);
   font-family: system-ui, -apple-system, sans-serif;
 }
@@ -33,11 +26,53 @@ body {
   min-height: 100vh;
 }
 
+.app-shell {
+  min-height: 100vh;
+  background-image: url('/pool-background.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+.app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(26, 11, 16, 0.55) 0%,
+    rgba(26, 11, 16, 0.35) 40%,
+    rgba(26, 11, 16, 0.5) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
 .guard-panel {
   border-radius: 0.5rem;
-  border: 1px solid var(--color-guard-maroon-light);
-  background-color: color-mix(in srgb, var(--color-guard-maroon-mid) 85%, #1a0b10);
+  border: 1px solid color-mix(in srgb, var(--color-guard-maroon-light) 70%, white);
+  background-color: color-mix(in srgb, var(--color-guard-maroon-mid) 75%, transparent);
   box-shadow: 0 1px 0 color-mix(in srgb, var(--color-guard-red) 15%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.timeline-panel {
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--color-guard-maroon-light) 70%, white);
+  background-color: color-mix(in srgb, var(--color-guard-maroon-deep) 88%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.controls-bar {
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--color-guard-maroon-light) 60%, white);
+  background-color: color-mix(in srgb, var(--color-guard-maroon-deep) 82%, transparent);
+  backdrop-filter: blur(8px);
 }
 
 .guard-btn-primary {
@@ -55,4 +90,18 @@ body {
 .guard-btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@keyframes drowning-flash-pulse {
+  0%,
+  100% {
+    background-color: rgba(185, 28, 28, 0.12);
+  }
+  50% {
+    background-color: rgba(185, 28, 28, 0.28);
+  }
+}
+
+.drowning-flash {
+  animation: drowning-flash-pulse 1.2s ease-in-out infinite;
 }

@@ -5,8 +5,8 @@ import type { Zone, ZoneKind } from '../types/zone'
 import { drawSceneWithVideo, drawVideoFrame } from '../utils/skeletonRenderer'
 import { ZoneOverlay } from './ZoneOverlay'
 
-const CANVAS_WIDTH = 640
-const CANVAS_HEIGHT = 480
+const CANVAS_WIDTH = 960
+const CANVAS_HEIGHT = 720
 
 interface SkeletonCanvasProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
@@ -100,7 +100,7 @@ export function SkeletonCanvas({
       : 'Click Start Monitoring to begin'
 
   return (
-    <div className="relative overflow-hidden rounded-lg border-2 border-guard-maroon-light bg-guard-maroon-deep shadow-inner">
+    <div className="relative overflow-hidden rounded-lg border-2 border-guard-maroon-light/90 bg-guard-maroon-deep/80 shadow-2xl shadow-black/40 backdrop-blur-sm">
       <video
         ref={videoRef}
         className="hidden"

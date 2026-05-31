@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PersonDetection } from './types/detection'
-import { AlertBanner } from './components/AlertBanner'
 import { Controls } from './components/Controls'
 import { DevTools } from './components/DevTools'
-import { PeopleList } from './components/PeopleList'
-import { ReplayViewer } from './components/ReplayViewer'
+import { DrowningAlertOverlay } from './components/DrowningAlertOverlay'
+import { LiveTimelineLog } from './components/LiveTimelineLog'
 import { StatusBar } from './components/StatusBar'
 import { VideoFeed } from './components/VideoFeed'
 import { usePersonDetection } from './hooks/usePersonDetection'
 import { useRiskScoring } from './hooks/useRiskScoring'
+import { useTimelineLog } from './hooks/useTimelineLog'
 import { useVideoSource } from './hooks/useVideoSource'
 import { useZones } from './hooks/useZones'
 import type { VideoSourceMode } from './types/videoSource'
@@ -23,6 +23,9 @@ function App() {
   const { zones, addZone, removeZone, clearZones } = useZones()
   const [zoneEditing, setZoneEditing] = useState(false)
   const [zoneDrawKind, setZoneDrawKind] = useState<ZoneKind>('monitor')
+  const { events, append, clear, maybeLogRiskSpike } = useTimelineLog()
+  const wasAlertingRef = useRef(false)
+  const wasMonitoringRef = useRef(false)
 
   const handleVideoEnded = useCallback(() => {
     setIsMonitoring(false)
@@ -63,11 +66,9 @@ function App() {
   })
 
   const {
-    people,
     activePeople,
     riskState,
     isAlerting,
-    incidents,
     resetAlert,
     resetSession,
   } = useRiskScoring(detections, isMonitoring, zones)
@@ -80,14 +81,22 @@ function App() {
     }
     setDetections([])
     resetSession()
-  }, [resetSession])
+    clear()
+    append(
+      mode === 'webcam' ? 'Input: webcam selected' : 'Input: video file selected',
+      'system',
+    )
+  }, [resetSession, clear, append])
 
   const handleVideoFileChange = useCallback((file: File | null) => {
     setIsMonitoring(false)
     setVideoFile(file)
     setDetections([])
     resetSession()
-  }, [resetSession])
+    if (file) {
+      append(`Video loaded: ${file.name}`, 'system')
+    }
+  }, [resetSession, append])
 
   useEffect(() => {
     if (isAlerting && !alertTime) {
@@ -97,6 +106,30 @@ function App() {
       setAlertTime(null)
     }
   }, [isAlerting, alertTime])
+
+  useEffect(() => {
+    if (isAlerting && !wasAlertingRef.current) {
+      append('Drowning alert triggered — check pool immediately', 'alert', 100)
+    }
+    wasAlertingRef.current = isAlerting
+  }, [isAlerting, append])
+
+  useEffect(() => {
+    if (isMonitoring && !wasMonitoringRef.current) {
+      append('Monitoring started', 'system')
+    } else if (!isMonitoring && wasMonitoringRef.current) {
+      append('Monitoring stopped', 'system')
+    }
+    wasMonitoringRef.current = isMonitoring
+  }, [isMonitoring, append])
+
+  useEffect(() => {
+    if (!isMonitoring || activePeople.length === 0) return
+    const top = activePeople[0]
+    if (top) {
+      maybeLogRiskSpike(top.riskScore, `Person #${top.id}`)
+    }
+  }, [isMonitoring, activePeople, maybeLogRiskSpike])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -112,24 +145,25 @@ function App() {
   const error = videoError ?? detectionError
 
   return (
-    <div className="mx-auto min-h-screen max-w-6xl px-4 py-6">
-      <StatusBar
-        isMonitoring={isMonitoring}
-        fps={fps}
-        isLoading={isLoading}
-        personCount={personCount}
-        sourceMode={sourceMode}
-        fileName={fileName}
-      />
-
-      {error && (
-        <div className="mt-4 rounded-lg border-2 border-guard-red bg-guard-red/20 px-4 py-3 text-guard-cream">
-          {error}
-        </div>
+    <div className="app-shell flex min-h-screen flex-col px-3 py-3 sm:px-4 sm:py-4">
+      {isAlerting && (
+        <DrowningAlertOverlay
+          alertTime={alertTime}
+          onDismiss={resetAlert}
+        />
       )}
 
-      <div className="guard-panel mt-4 p-4">
-        <p className="mb-3 text-sm font-medium text-guard-yellow">Input source</p>
+      <div className="controls-bar flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <StatusBar
+          isMonitoring={isMonitoring}
+          fps={fps}
+          isLoading={isLoading}
+          personCount={personCount}
+          sourceMode={sourceMode}
+          fileName={fileName}
+          isAlerting={isAlerting}
+          riskState={riskState}
+        />
         <Controls
           sourceMode={sourceMode}
           onSourceModeChange={handleSourceModeChange}
@@ -141,18 +175,20 @@ function App() {
           isReady={isReady}
           onStart={() => setIsMonitoring(true)}
           onStop={() => setIsMonitoring(false)}
-          onResetIncident={resetAlert}
         />
-        <p className="mt-2 text-xs text-guard-cream/40">
-          Press Space to start/stop · Switch to <strong className="text-guard-pool">Video File</strong> to test pool footage
-        </p>
       </div>
 
-      <main className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+      {error && (
+        <div className="mt-2 rounded-lg border-2 border-guard-red bg-guard-red/20 px-3 py-2 text-sm text-guard-cream">
+          {error}
+        </div>
+      )}
+
+      <main className="mt-3 grid min-h-0 flex-1 gap-3 lg:grid-cols-[1fr_280px] xl:grid-cols-[1fr_300px]">
         <VideoFeed
           videoRef={videoRef}
           activePeople={activePeople}
-          rosterCount={people.length}
+          rosterCount={activePeople.length}
           isMonitoring={isMonitoring}
           mirrored={mirrored}
           sourceMode={sourceMode}
@@ -167,22 +203,12 @@ function App() {
           onZoneRemove={removeZone}
         />
 
-        <aside className="flex flex-col gap-4">
-          <PeopleList people={people} />
-        </aside>
+        <LiveTimelineLog events={events} />
       </main>
 
-      <div className="mt-4">
-        <AlertBanner
-          isAlerting={isAlerting}
-          riskState={riskState}
-          alertTime={alertTime}
-        />
-      </div>
-
-      <div className="mt-6">
-        <ReplayViewer incidents={incidents} />
-      </div>
+      <p className="mt-2 text-center text-[10px] text-guard-cream/35 sm:text-xs">
+        Space to start/stop · Video file mode for pool footage tests
+      </p>
 
       <DevTools
         zones={zones}

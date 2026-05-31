@@ -1,3 +1,4 @@
+import type { RiskState } from '../types/risk'
 import type { VideoSourceMode } from '../types/videoSource'
 
 interface StatusBarProps {
@@ -7,6 +8,8 @@ interface StatusBarProps {
   personCount: number
   sourceMode: VideoSourceMode
   fileName: string | null
+  isAlerting?: boolean
+  riskState?: RiskState
 }
 
 export function StatusBar({
@@ -16,6 +19,8 @@ export function StatusBar({
   personCount,
   sourceMode,
   fileName,
+  isAlerting = false,
+  riskState = 'SAFE',
 }: StatusBarProps) {
   const sourceLabel =
     sourceMode === 'file'
@@ -25,20 +30,29 @@ export function StatusBar({
       : 'Webcam'
 
   return (
-    <header className="border-b-2 border-guard-red pb-4">
-      <div className="mb-3 h-1 w-full rounded-full bg-gradient-to-r from-guard-red via-guard-yellow to-guard-red" />
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight">
-            <span className="text-guard-red">My</span>
-            <span className="text-guard-white">Guard</span>
+    <header className="shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+            <span className="text-guard-white">my</span>
+            <span className="text-guard-red">guard</span>
           </h1>
-          <span className="rounded border border-guard-yellow/40 bg-guard-yellow/10 px-2 py-0.5 text-xs font-medium text-guard-yellow">
+          <span className="hidden rounded border border-guard-yellow/40 bg-guard-yellow/10 px-2 py-0.5 text-xs font-medium text-guard-yellow sm:inline">
             Lifeguard monitor
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="max-w-[200px] truncate text-guard-pool/80">{sourceLabel}</span>
+        <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
+          {isAlerting && (
+            <span className="font-semibold text-guard-red">
+              ⚠ Alert active
+            </span>
+          )}
+          {!isAlerting && isMonitoring && (
+            <span className="text-guard-cream/60">{riskState}</span>
+          )}
+          <span className="hidden max-w-[140px] truncate text-guard-pool/80 md:inline">
+            {sourceLabel}
+          </span>
           <div className="flex items-center gap-2">
             <span
               className={`h-2.5 w-2.5 rounded-full ${

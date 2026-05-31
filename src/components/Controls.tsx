@@ -11,7 +11,6 @@ interface ControlsProps {
   isReady: boolean
   onStart: () => void
   onStop: () => void
-  onResetIncident: () => void
 }
 
 export function Controls({
@@ -25,26 +24,25 @@ export function Controls({
   isReady,
   onStart,
   onStop,
-  onResetIncident,
 }: ControlsProps) {
   const canStart =
     sourceMode === 'webcam' || (sourceMode === 'file' && videoFile !== null)
 
   const startLabel =
-    sourceMode === 'file' ? 'Run Video Analysis' : 'Start Monitoring'
+    sourceMode === 'file' ? 'Run analysis' : 'Start monitoring'
 
-  const tabActive = 'bg-guard-red text-white shadow-md shadow-guard-red/30'
+  const tabActive = 'bg-guard-red text-white'
   const tabIdle =
-    'border border-guard-maroon-light text-guard-cream/90 hover:bg-guard-maroon-mid'
+    'border border-guard-maroon-light/80 text-guard-cream/90 hover:bg-guard-maroon-mid/80'
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex gap-1">
         <button
           type="button"
           onClick={() => onSourceModeChange('webcam')}
           disabled={isMonitoring}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${
+          className={`rounded px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 sm:text-sm ${
             sourceMode === 'webcam' ? tabActive : tabIdle
           }`}
         >
@@ -54,18 +52,18 @@ export function Controls({
           type="button"
           onClick={() => onSourceModeChange('file')}
           disabled={isMonitoring}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition disabled:opacity-50 ${
+          className={`rounded px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 sm:text-sm ${
             sourceMode === 'file' ? tabActive : tabIdle
           }`}
         >
-          Video File
+          Video file
         </button>
       </div>
 
       {sourceMode === 'file' && (
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="cursor-pointer rounded-lg border border-guard-maroon-light px-4 py-2 text-sm text-guard-cream transition hover:border-guard-yellow/50 hover:bg-guard-maroon-mid">
-            Choose video…
+        <>
+          <label className="cursor-pointer rounded border border-guard-maroon-light/80 px-2.5 py-1.5 text-xs text-guard-cream transition hover:border-guard-yellow/50 sm:text-sm">
+            Choose…
             <input
               type="file"
               accept="video/*"
@@ -79,45 +77,35 @@ export function Controls({
             />
           </label>
           {fileName && (
-            <span className="max-w-xs truncate text-sm text-guard-pool">{fileName}</span>
+            <span className="max-w-[120px] truncate text-xs text-guard-pool sm:max-w-[180px]">
+              {fileName}
+            </span>
           )}
-          {!fileName && (
-            <span className="text-sm text-guard-cream/50">MP4, WebM, MOV supported</span>
-          )}
-        </div>
+        </>
       )}
 
-      <div className="flex flex-wrap gap-3">
-        {!isMonitoring ? (
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={isLoading || !canStart}
-            className="guard-btn-primary px-5 py-2.5"
-          >
-            {isLoading
-              ? 'Loading model…'
-              : sourceMode === 'file' && !isReady && videoFile
-                ? 'Loading video…'
-                : startLabel}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onStop}
-            className="rounded-lg border-2 border-guard-yellow bg-guard-yellow/20 px-5 py-2.5 font-medium text-guard-yellow transition hover:bg-guard-yellow/30"
-          >
-            Stop
-          </button>
-        )}
+      {!isMonitoring ? (
         <button
           type="button"
-          onClick={onResetIncident}
-          className="rounded-lg border border-guard-maroon-light px-5 py-2.5 font-medium text-guard-cream/80 transition hover:border-guard-red/50 hover:text-guard-white"
+          onClick={onStart}
+          disabled={isLoading || !canStart}
+          className="guard-btn-primary rounded px-3 py-1.5 text-xs sm:text-sm"
         >
-          Reset Incident
+          {isLoading
+            ? 'Loading…'
+            : sourceMode === 'file' && !isReady && videoFile
+              ? 'Loading video…'
+              : startLabel}
         </button>
-      </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onStop}
+          className="rounded border border-guard-yellow bg-guard-yellow/20 px-3 py-1.5 text-xs font-medium text-guard-yellow sm:text-sm"
+        >
+          Stop
+        </button>
+      )}
     </div>
   )
 }
