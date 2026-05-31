@@ -14,6 +14,8 @@ interface ControlsProps {
   onStart: () => void
   onStop: () => void
   onResetIncident: () => void
+  isDemoMode: boolean
+  onDemoModeChange: (val: boolean) => void
 }
 
 export function Controls({
@@ -30,6 +32,8 @@ export function Controls({
   onStart,
   onStop,
   onResetIncident,
+  isDemoMode,
+  onDemoModeChange,
 }: ControlsProps) {
   const canStart =
     sourceMode === 'webcam' || (sourceMode === 'file' && videoFile !== null)
@@ -134,6 +138,17 @@ export function Controls({
           className="rounded-lg border border-slate-600 px-5 py-2.5 font-medium text-slate-300 transition hover:bg-slate-800"
         >
           Reset Incident
+        </button>
+        <button
+          type="button"
+          onClick={() => onDemoModeChange(!isDemoMode)}
+          className={`rounded-lg border px-5 py-2.5 font-medium transition ${
+            isDemoMode
+              ? 'border-violet-500 bg-violet-500/10 text-violet-400'
+              : 'border-slate-600 text-slate-400 hover:bg-slate-800'
+          }`}
+        >
+          {isDemoMode ? 'Demo Mode ON' : 'Demo Mode'}
         </button>
       </div>
     </div>

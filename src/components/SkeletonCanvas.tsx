@@ -107,8 +107,16 @@ export function SkeletonCanvas({
         </div>
       )}
       {isMonitoring && people.length > 0 && (
-        <div className="absolute left-2 top-2 rounded bg-black/60 px-2 py-1 text-xs text-white">
-          {people.length} {people.length === 1 ? 'person' : 'people'} tracked
+        <div className="absolute left-2 top-2 space-y-1">
+          <div className="rounded bg-black/60 px-2 py-1 text-xs text-white">
+            {people.filter((p) => !p.isGhost).length}{' '}
+            {people.filter((p) => !p.isGhost).length === 1 ? 'person' : 'people'} tracked
+          </div>
+          {people.some((p) => p.isGhost) && (
+            <div className="rounded bg-red-900/80 px-2 py-1 text-xs font-semibold text-red-200 animate-pulse">
+              ⚠ {people.filter((p) => p.isGhost).length} submerged
+            </div>
+          )}
         </div>
       )}
       {sourceMode === 'file' && fileName && (

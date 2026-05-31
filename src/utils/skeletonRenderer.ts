@@ -1,4 +1,4 @@
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import type { NormalizedLandmark } from '../types/pose'
 import {
   isLandmarkVisible,
   JOINT_INDICES,
@@ -6,7 +6,7 @@ import {
   SKELETON_CONNECTIONS,
 } from './poseMath'
 import type { TrackedPerson } from '../types/person'
-import { getSkeletonColor } from '../types/risk'
+import { getSkeletonColor, getRiskState } from '../types/risk'
 
 const VISIBILITY_THRESHOLD = 0.5
 
@@ -79,6 +79,66 @@ export function drawSkeleton(
   }
 }
 
+/** Draw a ghost skeleton: dashed strokes, reduced opacity, "SUBMERGED" label. */
+function drawGhostSkeleton(
+  ctx: CanvasRenderingContext2D,
+  person: TrackedPerson,
+  width: number,
+  height: number,
+  mirrored: boolean,
+): void {
+  const baseColor = getSkeletonColor(person.riskState)
+  // Parse the hex colour and rebuild with reduced alpha
+  ctx.save()
+  ctx.globalAlpha = 0.45
+  ctx.setLineDash([6, 5])
+  drawSkeleton(ctx, person.landmarks, baseColor, width, height, {
+    mirrored,
+    lineWidth: 2,
+    jointRadius: 4,
+  })
+  ctx.setLineDash([])
+  ctx.globalAlpha = 1
+
+  // Compute centroid from visible landmarks
+  const visiblePts = person.landmarks
+    .filter((lm) => lm && (lm.visibility ?? 1) > 0.25)
+    .map((lm) => landmarkToCanvas(lm, width, height, mirrored))
+
+  if (visiblePts.length > 0) {
+    const cx = visiblePts.reduce((s, p) => s + p.x, 0) / visiblePts.length
+    const cy = visiblePts.reduce((s, p) => s + p.y, 0) / visiblePts.length
+
+    const missingS = person.missingMs != null ? (person.missingMs / 1000).toFixed(1) : '?'
+    const label = `SUBMERGED  ${missingS}s`
+
+    ctx.font = 'bold 11px monospace'
+    const tw = ctx.measureText(label).width
+    const bx = cx - tw / 2 - 5, by = cy - 28
+    const bw = tw + 10, bh = 18
+
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.85)'
+    ctx.beginPath()
+    ctx.roundRect(bx, by, bw, bh, 4)
+    ctx.fill()
+
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(label, cx, by + bh / 2)
+
+    // Pulsing ring at centroid
+    const pulse = (Date.now() % 1000) / 1000
+    ctx.beginPath()
+    ctx.arc(cx, cy, 14 + pulse * 10, 0, Math.PI * 2)
+    ctx.strokeStyle = `rgba(239, 68, 68, ${0.8 - pulse * 0.7})`
+    ctx.lineWidth = 2
+    ctx.stroke()
+  }
+
+  ctx.restore()
+}
+
 export function drawMultipleSkeletons(
   ctx: CanvasRenderingContext2D,
   people: TrackedPerson[],
@@ -87,8 +147,12 @@ export function drawMultipleSkeletons(
   mirrored = true,
 ): void {
   for (const person of people) {
-    const color = getSkeletonColor(person.riskState)
-    drawSkeleton(ctx, person.landmarks, color, width, height, { mirrored })
+    if (person.isGhost) {
+      drawGhostSkeleton(ctx, person, width, height, mirrored)
+    } else {
+      const color = getSkeletonColor(person.riskState)
+      drawSkeleton(ctx, person.landmarks, color, width, height, { mirrored })
+    }
   }
 }
 
@@ -139,15 +203,7 @@ export function drawReplayFrame(
 ): void {
   drawSkeletonOnlyBackground(ctx, width, height)
   for (const person of people) {
-    const color = getSkeletonColor(
-      person.riskScore >= 85
-        ? 'CRITICAL'
-        : person.riskScore >= 65
-          ? 'DISTRESS'
-          : person.riskScore >= 40
-            ? 'CAUTION'
-            : 'SAFE',
-    )
+    const color = getSkeletonColor(getRiskState(person.riskScore))
     drawSkeleton(ctx, person.landmarks, color, width, height)
   }
 }

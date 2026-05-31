@@ -70,7 +70,7 @@ export class ReplayRecorder {
   }
 
   trackHighRiskDuration(timestamp: number, riskScore: number): number {
-    if (riskScore > 65) {
+    if (riskScore > 70) {
       if (this.highRiskStart === null) {
         this.highRiskStart = timestamp
       }

@@ -1,8 +1,8 @@
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import type { NormalizedLandmark } from '../types/pose'
 import type { PoseHistoryEntry, RiskResult } from '../types/risk'
 import { getRiskState } from '../types/risk'
 import { POSE_LANDMARK } from '../types/pose'
-import { averageDisplacement, getTorsoMidpoints } from './poseMath'
+import { euclideanDistance, getTorsoMidpoints } from './poseMath'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -12,158 +12,327 @@ function clamp(value: number, min: number, max: number): number {
 export function getTorsoAngleDeg(landmarks: NormalizedLandmark[]): number | null {
   const midpoints = getTorsoMidpoints(landmarks)
   if (!midpoints) return null
-
   const { shoulderMid, hipMid } = midpoints
   const dx = shoulderMid.x - hipMid.x
   const dy = shoulderMid.y - hipMid.y
   return Math.abs((Math.atan2(-dy, dx) * 180) / Math.PI)
 }
 
-/**
- * 0 when lying down, 1 when upright. Drowning distress signals only apply
- * when the body is roughly vertical in the water — not when recumbent on a floor.
- */
 function uprightFactor(torsoAngleDeg: number | null): number {
   if (torsoAngleDeg === null) return 0
   return clamp((torsoAngleDeg - 40) / 35, 0, 1)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODE A — FACE-DOWN / HORIZONTAL
+// Covers: child falls in, unconscious person, prone submersion.
+// The most common real-world drowning pattern. Completely separate from IDR.
+//
+// Key distinction: face-UP horizontal = safe (floating on back).
+//                  face-DOWN horizontal = emergency.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns how "face-down" the person is: nose below shoulder midpoint.
+ * In image coords y increases downward, so nose.y > shoulderMidY = face down.
+ * Also fires when the nose keypoint is missing while body is detected (head submerged).
+ */
+function computeFaceDownScore(
+  landmarks: NormalizedLandmark[],
+  torsoAngleDeg: number | null,
+): number {
+  // Upright people can't be face-down in the meaningful sense
+  if (torsoAngleDeg !== null && torsoAngleDeg > 72) return 0
+
+  const nose = landmarks[POSE_LANDMARK.NOSE]
+  const ls   = landmarks[POSE_LANDMARK.LEFT_SHOULDER]
+  const rs   = landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
+
+  if (!ls || !rs) return 0
+
+  const shoulderMidY = (ls.y + rs.y) / 2
+
+  // Head submerged: body detected but nose missing → strong signal
+  if (!nose || (nose.visibility ?? 1) < 0.25) {
+    const shoulderVis = ((ls.visibility ?? 1) + (rs.visibility ?? 1)) / 2
+    if (shoulderVis > 0.5 && torsoAngleDeg !== null && torsoAngleDeg < 50) return 80
+    return 0
+  }
+
+  // Nose below shoulder midpoint = face pointing toward the water
+  const faceDownAmount = nose.y - shoulderMidY
+  if (faceDownAmount <= 0.02) return 0
+  if (faceDownAmount >= 0.10) return 100
+  return clamp(((faceDownAmount - 0.02) / 0.08) * 100, 0, 100)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODE B — UPRIGHT / IDR (Instinctive Drowning Response)
+// Covers: adult in deep water, vertical, arms pressing at surface, sinking.
+// ─────────────────────────────────────────────────────────────────────────────
 
 function computeVerticalScore(torsoAngleDeg: number | null): number {
   if (torsoAngleDeg === null) return 0
   return clamp(((torsoAngleDeg - 20) / 50) * 100, 0, 100)
 }
 
+/**
+ * IDR arm press: wrists near shoulder height, elbows angling down.
+ * Arm raised above head = waving (opposite of IDR) → subtract points.
+ */
 function computeArmsScore(
   landmarks: NormalizedLandmark[],
   torsoAngleDeg: number | null,
 ): number {
-  // Arms-below-shoulders is normal when lying on a floor — require upright torso
   if (torsoAngleDeg === null || torsoAngleDeg < 55) return 0
 
   const ls = landmarks[POSE_LANDMARK.LEFT_SHOULDER]
   const rs = landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
+  const le = landmarks[POSE_LANDMARK.LEFT_ELBOW]
+  const re = landmarks[POSE_LANDMARK.RIGHT_ELBOW]
   const lw = landmarks[POSE_LANDMARK.LEFT_WRIST]
   const rw = landmarks[POSE_LANDMARK.RIGHT_WRIST]
 
-  if (!ls || !rs || !lw || !rw) return 0
+  if (!ls || !rs) return 0
 
-  const margin = 0.04
-  const leftBelow =
-    lw.y > ls.y + margin && (lw.visibility ?? 1) > 0.5
-  const rightBelow =
-    rw.y > rs.y + margin && (rw.visibility ?? 1) > 0.5
+  const checkArm = (
+    shoulder: NormalizedLandmark,
+    elbow: NormalizedLandmark | undefined,
+    wrist: NormalizedLandmark | undefined,
+  ): number => {
+    if (!wrist || (wrist.visibility ?? 1) < 0.4) return 0
+    if (wrist.y < shoulder.y - 0.12) return -15  // waving above head → not IDR
+    const atSurface = Math.abs(wrist.y - shoulder.y) < 0.15
+    const pressing  = !elbow || (elbow.visibility ?? 1) < 0.3 ? true : elbow.y >= wrist.y
+    if (atSurface && pressing) return 50
+    if (wrist.y > shoulder.y + 0.04) return 25
+    return 0
+  }
 
-  if (leftBelow && rightBelow) return 100
-  if (leftBelow || rightBelow) return 50
-  return 0
+  return clamp(checkArm(ls, le, lw) + checkArm(rs, re, rw), 0, 100)
 }
 
-function computeSubmersionScore(
+/**
+ * Head at surface: nose approaching shoulder height = head tilted back, mouth at water.
+ * Normal upright: nose 0.18+ above shoulders. IDR: drops toward 0.05.
+ */
+function computeHeadAtSurfaceScore(
   landmarks: NormalizedLandmark[],
   torsoAngleDeg: number | null,
 ): number {
-  // Low visibility from a floor angle ≠ submerged legs in water
-  if (torsoAngleDeg === null || torsoAngleDeg < 45) return 0
+  if (torsoAngleDeg === null || torsoAngleDeg < 55) return 0
 
   const nose = landmarks[POSE_LANDMARK.NOSE]
-  const ls = landmarks[POSE_LANDMARK.LEFT_SHOULDER]
-  const rs = landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
-  const lh = landmarks[POSE_LANDMARK.LEFT_HIP]
-  const rh = landmarks[POSE_LANDMARK.RIGHT_HIP]
-  const la = landmarks[POSE_LANDMARK.LEFT_ANKLE]
-  const ra = landmarks[POSE_LANDMARK.RIGHT_ANKLE]
+  const ls   = landmarks[POSE_LANDMARK.LEFT_SHOULDER]
+  const rs   = landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
+  if (!nose || !ls || !rs) return 0
+  if ((nose.visibility ?? 1) < 0.45) return 0
+  if ((ls.visibility ?? 1) < 0.4 || (rs.visibility ?? 1) < 0.4) return 0
 
-  if (!nose || !ls || !rs || !lh || !rh || !la || !ra) return 0
+  const shoulderMidY = (ls.y + rs.y) / 2
+  const headRise = shoulderMidY - nose.y
 
-  const headVis =
-    ((nose.visibility ?? 1) + (ls.visibility ?? 1) + (rs.visibility ?? 1)) / 3
-  const hipVis = ((lh.visibility ?? 1) + (rh.visibility ?? 1)) / 2
-  const ankleVis = ((la.visibility ?? 1) + (ra.visibility ?? 1)) / 2
+  if (headRise >= 0.18) return 0
+  if (headRise <= 0.05) return 80
 
-  // Drowning pattern: head clearly visible, lower body hidden underwater
-  if (headVis < 0.6) return 0
-  if (hipVis > 0.7) return 0
-
-  return clamp((1 - hipVis) * 40 + (1 - ankleVis) * 60, 0, 100)
+  const headScore = clamp(((0.18 - headRise) / 0.13) * 80, 0, 80)
+  const legHang   = computeLegHangScore(landmarks, torsoAngleDeg)
+  return clamp(headScore + legHang * 0.25, 0, 100)
 }
 
+function computeLegHangScore(
+  landmarks: NormalizedLandmark[],
+  torsoAngleDeg: number | null,
+): number {
+  if (torsoAngleDeg === null || torsoAngleDeg < 55) return 0
+  const lh = landmarks[POSE_LANDMARK.LEFT_HIP]
+  const rh = landmarks[POSE_LANDMARK.RIGHT_HIP]
+  if (!lh || !rh) return 0
+  const hipMidX = (lh.x + rh.x) / 2, hipMidY = (lh.y + rh.y) / 2
+  let aligned = 0, total = 0
+  const check = (lm: NormalizedLandmark | undefined, rx: number, ry: number) => {
+    if (!lm || (lm.visibility ?? 1) < 0.3) return
+    total++
+    if (lm.y > ry && Math.abs(lm.x - rx) < 0.13) aligned++
+  }
+  check(landmarks[POSE_LANDMARK.LEFT_KNEE],   lh.x,    lh.y)
+  check(landmarks[POSE_LANDMARK.RIGHT_KNEE],  rh.x,    rh.y)
+  check(landmarks[POSE_LANDMARK.LEFT_ANKLE],  hipMidX, hipMidY)
+  check(landmarks[POSE_LANDMARK.RIGHT_ANKLE], hipMidX, hipMidY)
+  return total === 0 ? 0 : (aligned / total) * 100
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPORAL SIGNALS (both modes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Head descent: body-relative nose position dropping over ~3.5 seconds. */
+function computeHeadDescentScore(
+  landmarks: NormalizedLandmark[],
+  history: PoseHistoryEntry[],
+  now: number,
+): number {
+  const nose = landmarks[POSE_LANDMARK.NOSE]
+  const ls   = landmarks[POSE_LANDMARK.LEFT_SHOULDER]
+  const rs   = landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
+  if (!nose || !ls || !rs) return 0
+  if ((nose.visibility ?? 1) < 0.4 || (ls.visibility ?? 1) < 0.4) return 0
+
+  const headRiseNow = (ls.y + rs.y) / 2 - nose.y
+  const past = history.findLast((e) => e.timestamp <= now - 3500)
+  if (!past) return 0
+
+  const pNose = past.landmarks[POSE_LANDMARK.NOSE]
+  const pLs   = past.landmarks[POSE_LANDMARK.LEFT_SHOULDER]
+  const pRs   = past.landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
+  if (!pNose || !pLs || !pRs || (pNose.visibility ?? 1) < 0.4) return 0
+
+  const headRisePast = (pLs.y + pRs.y) / 2 - pNose.y
+  const descent = headRisePast - headRiseNow
+
+  if (descent <= 0.01) return 0
+  if (descent >= 0.10) return 100
+  return clamp((descent / 0.10) * 100, 0, 100)
+}
+
+/**
+ * Arm range: small wrist travel range = arms locked at surface (IDR).
+ * Large range = active sculling = treading water (safe).
+ */
+function computeArmRangeScore(history: PoseHistoryEntry[]): number {
+  const ys: number[] = []
+  for (const e of history) {
+    const lw = e.landmarks[POSE_LANDMARK.LEFT_WRIST]
+    const rw = e.landmarks[POSE_LANDMARK.RIGHT_WRIST]
+    if (lw && (lw.visibility ?? 1) > 0.3) ys.push(lw.y)
+    if (rw && (rw.visibility ?? 1) > 0.3) ys.push(rw.y)
+  }
+  if (ys.length < 5) return 0
+  const range = Math.max(...ys) - Math.min(...ys)
+  if (range >= 0.25) return 0
+  if (range <= 0.08) return 100
+  return clamp(((0.25 - range) / 0.17) * 100, 0, 100)
+}
+
+const TORSO_LANDMARKS = [
+  POSE_LANDMARK.NOSE,
+  POSE_LANDMARK.LEFT_SHOULDER,
+  POSE_LANDMARK.RIGHT_SHOULDER,
+  POSE_LANDMARK.LEFT_HIP,
+  POSE_LANDMARK.RIGHT_HIP,
+] as const
+
+/**
+ * Torso stasis: how little the core body has moved over 3 seconds.
+ * isFaceDown = true → fires even when horizontal (face-down + not moving = emergency).
+ * isFaceDown = false + horizontal → skip (floating on back is fine).
+ */
 function computeStasisScore(
   landmarks: NormalizedLandmark[],
   history: PoseHistoryEntry[],
   now: number,
   upright: number,
+  isFaceDown: boolean,
 ): number {
-  if (upright < 0.3) return 0
+  if (upright < 0.3 && !isFaceDown) return 0
 
-  const threeSecondsAgo = now - 3000
-  const pastEntry = history.find((entry) => entry.timestamp <= threeSecondsAgo)
+  const past = history.findLast((e) => e.timestamp <= now - 3000)
+  if (!past) return 0
 
-  if (!pastEntry) return 0
+  let total = 0, count = 0
+  for (const idx of TORSO_LANDMARKS) {
+    const c = landmarks[idx]
+    const p = past.landmarks[idx]
+    if (!c || !p) continue
+    if ((c.visibility ?? 1) < 0.4 || (p.visibility ?? 1) < 0.4) continue
+    total += euclideanDistance({ x: c.x, y: c.y }, { x: p.x, y: p.y })
+    count++
+  }
+  if (count === 0) return 0
 
-  const displacement = averageDisplacement(landmarks, pastEntry.landmarks)
-  const raw = clamp(1 - displacement / 0.03, 0, 1) * 100
-
-  // Stillness only matters when upright; lying still on a floor is not distress
-  return raw * upright
+  const raw = clamp(1 - (total / count) / 0.025, 0, 1) * 100
+  return isFaceDown ? raw : raw * upright
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPOSITE
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function computeRisk(
   landmarks: NormalizedLandmark[] | null,
   history: PoseHistoryEntry[],
   now = performance.now(),
 ): RiskResult {
-  if (!landmarks || landmarks.length < 33) {
-    return {
-      score: 0,
-      state: 'SAFE',
-      contributors: { vertical: 0, arms: 0, submersion: 0, stasis: 0 },
-    }
+  if (!landmarks || landmarks.length < 17) {
+    return { score: 0, state: 'SAFE', contributors: { vertical: 0, arms: 0, submersion: 0, stasis: 0 } }
   }
 
   const torsoAngle = getTorsoAngleDeg(landmarks)
-  const upright = uprightFactor(torsoAngle)
+  const upright    = uprightFactor(torsoAngle)
 
-  const verticalScore = computeVerticalScore(torsoAngle)
-  const armsScore = computeArmsScore(landmarks, torsoAngle)
-  const submersionScore = computeSubmersionScore(landmarks, torsoAngle)
-  const stasisScore = computeStasisScore(landmarks, history, now, upright)
+  // ── Face-down score (works at any orientation, dominant when horizontal)
+  const faceDownScore = computeFaceDownScore(landmarks, torsoAngle)
+  const isFaceDown    = faceDownScore > 25
+  const isHorizontal  = torsoAngle !== null && torsoAngle < 45
 
+  // ── Upright signals
+  const verticalScore    = computeVerticalScore(torsoAngle)
+  const armsScore        = computeArmsScore(landmarks, torsoAngle)
+  const headSurfaceScore = computeHeadAtSurfaceScore(landmarks, torsoAngle)
+  const headDescentScore = computeHeadDescentScore(landmarks, history, now)
+
+  // ── Temporal signals
+  const stasisScore   = computeStasisScore(landmarks, history, now, upright, isFaceDown)
+  const armRangeScore = computeArmRangeScore(history)
+
+  // ── Blend: submersion slot switches between face-down and head-position signal
+  const submersionBlended = isHorizontal
+    ? faceDownScore                                          // horizontal → face-down dominates
+    : headSurfaceScore * 0.55 + headDescentScore * 0.45     // upright → IDR head position
+
+  // ── Stasis slot: arm-range only meaningful when upright
+  const stasisBlended = stasisScore * 0.55 + (isHorizontal ? 0 : armRangeScore * 0.45)
+
+  // Weight budget: 30 + 15 + 30 + 25 = 100
   const contributors = {
-    vertical: Math.round(verticalScore * 0.4),
-    arms: Math.round(armsScore * 0.25),
-    submersion: Math.round(submersionScore * 0.25),
-    stasis: Math.round(stasisScore * 0.1),
+    vertical:   Math.round(verticalScore      * 0.30),
+    arms:       Math.round(armsScore          * 0.15),
+    submersion: Math.round(submersionBlended  * 0.30),
+    stasis:     Math.round(stasisBlended      * 0.25),
   }
 
   let score = clamp(
     contributors.vertical +
-      contributors.arms +
-      contributors.submersion +
-      contributors.stasis,
-    0,
-    100,
+    contributors.arms +
+    contributors.submersion +
+    contributors.stasis,
+    0, 100,
   )
 
-  // Recumbent on floor/deck: cap well below CAUTION even if individual signals misfire
+  // ── Orientation guard
   if (torsoAngle !== null && torsoAngle < 40) {
-    score = Math.min(score, 25)
+    if (!isFaceDown) {
+      // Face-UP horizontal = floating on back, lying on deck → safe
+      score = Math.min(score, 25)
+    }
+    // Face-DOWN horizontal: do NOT cap — this is the emergency scenario from the clips
   }
 
-  // Active movement (scooting, flailing) — not passive drowning stasis
-  if (history.length > 0) {
-    const threeSecondsAgo = now - 3000
-    const pastEntry = history.find((e) => e.timestamp <= threeSecondsAgo)
-    if (pastEntry) {
-      const displacement = averageDisplacement(landmarks, pastEntry.landmarks)
-      if (displacement > 0.012) {
-        score = Math.min(score, 35)
-      }
+  // ── Active forward-swimming guard (shoulders moving intentionally)
+  // Only applies when upright — a horizontal swimmer in laps moves shoulders too
+  if (!isHorizontal && history.length > 0) {
+    const past = history.findLast((e) => e.timestamp <= now - 2000)
+    if (past) {
+      const lsN = landmarks[POSE_LANDMARK.LEFT_SHOULDER]
+      const rsN = landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
+      const lsP = past.landmarks[POSE_LANDMARK.LEFT_SHOULDER]
+      const rsP = past.landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
+      let disp = 0, n = 0
+      if (lsN && lsP) { disp += euclideanDistance({ x: lsN.x, y: lsN.y }, { x: lsP.x, y: lsP.y }); n++ }
+      if (rsN && rsP) { disp += euclideanDistance({ x: rsN.x, y: rsN.y }, { x: rsP.x, y: rsP.y }); n++ }
+      if (n > 0 && disp / n > 0.020) score = Math.min(score, 30)
     }
   }
 
-  return {
-    score,
-    state: getRiskState(score),
-    contributors,
-  }
+  return { score, state: getRiskState(score), contributors }
 }

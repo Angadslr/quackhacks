@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import type { NormalizedLandmark } from './types/pose'
 import { AlertBanner } from './components/AlertBanner'
 import { ContributorsPanel } from './components/ContributorsPanel'
 import { Controls } from './components/Controls'
+import { RacingTimer } from './components/RacingTimer'
 import { ReplayViewer } from './components/ReplayViewer'
 import { RiskMeter } from './components/RiskMeter'
 import { StatusBar } from './components/StatusBar'
@@ -19,6 +20,7 @@ function App() {
   const [sourceMode, setSourceMode] = useState<VideoSourceMode>('webcam')
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [loopVideo, setLoopVideo] = useState(true)
+  const [isDemoMode, setIsDemoMode] = useState(false)
 
   const {
     videoRef,
@@ -62,6 +64,7 @@ function App() {
     highestRiskPersonId,
     isAlerting,
     highRiskDurationMs,
+    watchDurationMs,
     incidents,
     resetAlert,
   } = useRiskScoring(poses, isMonitoring)
@@ -69,9 +72,7 @@ function App() {
   const handleSourceModeChange = useCallback((mode: VideoSourceMode) => {
     setIsMonitoring(false)
     setSourceMode(mode)
-    if (mode === 'webcam') {
-      setVideoFile(null)
-    }
+    if (mode === 'webcam') setVideoFile(null)
     setPoses([])
     resetAlert()
   }, [resetAlert])
@@ -84,12 +85,8 @@ function App() {
   }, [resetAlert])
 
   useEffect(() => {
-    if (isAlerting && !alertTime) {
-      setAlertTime(new Date())
-    }
-    if (!isAlerting) {
-      setAlertTime(null)
-    }
+    if (isAlerting && !alertTime) setAlertTime(new Date())
+    if (!isAlerting) setAlertTime(null)
   }, [isAlerting, alertTime])
 
   useEffect(() => {
@@ -138,6 +135,8 @@ function App() {
           onStart={() => setIsMonitoring(true)}
           onStop={() => setIsMonitoring(false)}
           onResetIncident={resetAlert}
+          isDemoMode={isDemoMode}
+          onDemoModeChange={setIsDemoMode}
         />
         <p className="mt-2 text-xs text-slate-600">
           Press Space to start/stop · Switch to <strong className="text-slate-400">Video File</strong> to test pool footage
@@ -158,35 +157,57 @@ function App() {
         />
 
         <aside className="flex flex-col gap-4">
+          {isDemoMode && isMonitoring && (
+            <div className="rounded-lg border border-slate-600 bg-slate-900 px-4 py-3 text-center">
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Training Mode</p>
+              <p className="mt-1 text-sm text-slate-400">Stand in front of the camera</p>
+              <p className="mt-0.5 text-xs text-slate-600">Your pose is being scored in real time</p>
+            </div>
+          )}
+
           <RiskMeter score={riskScore} state={riskState} />
+
           <ContributorsPanel
             contributors={contributors}
             score={riskScore}
             personId={highestRiskPersonId}
             peopleCount={people.length}
           />
+
+          <RacingTimer
+            watchDurationMs={watchDurationMs}
+            isAlerting={isAlerting}
+            isActive={riskScore >= 40}
+          />
+
           {people.length > 1 && (
             <div className="rounded-lg border border-slate-700 bg-slate-900 p-3">
-              <p className="mb-2 text-xs font-medium text-slate-400">
-                Per-person risk
-              </p>
+              <p className="mb-2 text-xs font-medium text-slate-400">Per-person risk</p>
               <ul className="space-y-1">
                 {people.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex justify-between text-sm text-slate-300"
-                  >
-                    <span>Person #{p.id}</span>
-                    <span className="font-mono">{Math.round(p.riskScore)}%</span>
+                  <li key={p.id} className="flex items-center justify-between text-sm">
+                    <span className={p.isGhost ? 'text-red-400' : 'text-slate-300'}>
+                      {p.isGhost ? '⚠ ' : ''}Person #{p.id}
+                      {p.isGhost && p.missingMs != null && (
+                        <span className="ml-1 text-xs text-red-500">
+                          ({(p.missingMs / 1000).toFixed(1)}s submerged)
+                        </span>
+                      )}
+                    </span>
+                    <span className={`font-mono ${p.isGhost ? 'text-red-400' : 'text-slate-300'}`}>
+                      {Math.round(p.riskScore)}%
+                    </span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-          {isMonitoring && riskScore > 65 && !isAlerting && (
+
+          {isMonitoring && riskScore > 55 && !isAlerting && (
             <p className="text-xs text-slate-500">
-              High risk for {(highRiskDurationMs / 1000).toFixed(1)}s — alert at
-              4s
+              {riskScore >= 70
+                ? `Confirmed pattern for ${(highRiskDurationMs / 1000).toFixed(1)}s — alert at 4s`
+                : `Building pattern… score ${Math.round(riskScore)}% (need 70%)`}
             </p>
           )}
         </aside>
@@ -197,6 +218,7 @@ function App() {
           isAlerting={isAlerting}
           riskState={riskState}
           alertTime={alertTime}
+          highRiskDurationMs={highRiskDurationMs}
         />
       </div>
 
