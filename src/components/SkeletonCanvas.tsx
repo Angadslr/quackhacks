@@ -1,14 +1,17 @@
 import { useEffect, useRef } from 'react'
 import type { TrackedPerson } from '../types/person'
 import type { VideoSourceMode } from '../types/videoSource'
+import type { Zone, ZoneKind } from '../types/zone'
 import { drawSceneWithVideo, drawVideoFrame } from '../utils/skeletonRenderer'
+import { ZoneOverlay } from './ZoneOverlay'
 
-const CANVAS_WIDTH = 640
-const CANVAS_HEIGHT = 480
+const CANVAS_WIDTH = 768
+const CANVAS_HEIGHT = 576
 
 interface SkeletonCanvasProps {
   videoRef: React.RefObject<HTMLVideoElement | null>
   people: TrackedPerson[]
+  rosterCount: number
   isMonitoring: boolean
   mirrored: boolean
   sourceMode: VideoSourceMode
@@ -16,6 +19,11 @@ interface SkeletonCanvasProps {
   fileName: string | null
   videoDuration: number
   videoCurrentTime: number
+  zones: Zone[]
+  zoneEditing: boolean
+  zoneDrawKind: ZoneKind
+  onZoneCreate: (zone: Omit<Zone, 'id'>) => void
+  onZoneRemove: (id: string) => void
 }
 
 function formatTime(seconds: number): string {
@@ -27,6 +35,7 @@ function formatTime(seconds: number): string {
 export function SkeletonCanvas({
   videoRef,
   people,
+  rosterCount,
   isMonitoring,
   mirrored,
   sourceMode,
@@ -34,6 +43,11 @@ export function SkeletonCanvas({
   fileName,
   videoDuration,
   videoCurrentTime,
+  zones,
+  zoneEditing,
+  zoneDrawKind,
+  onZoneCreate,
+  onZoneRemove,
 }: SkeletonCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef<number>(0)
@@ -86,7 +100,7 @@ export function SkeletonCanvas({
       : 'Click Start Monitoring to begin'
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-slate-700 bg-slate-900">
+    <div className="relative overflow-hidden rounded-lg border-2 border-guard-maroon-light/90 bg-guard-maroon-deep/80 shadow-2xl shadow-black/40 backdrop-blur-sm">
       <video
         ref={videoRef}
         className="hidden"
@@ -101,18 +115,27 @@ export function SkeletonCanvas({
         height={CANVAS_HEIGHT}
         className="block w-full max-w-full"
       />
+      {zoneEditing && (
+        <ZoneOverlay
+          zones={zones}
+          editing={zoneEditing}
+          drawKind={zoneDrawKind}
+          onCreate={onZoneCreate}
+          onRemove={onZoneRemove}
+        />
+      )}
       {!isMonitoring && !isReady && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-          <p className="px-4 text-center text-slate-400">{placeholder}</p>
+        <div className="absolute inset-0 flex items-center justify-center bg-guard-maroon-deep/90">
+          <p className="px-4 text-center text-guard-cream/60">{placeholder}</p>
         </div>
       )}
-      {isMonitoring && people.length > 0 && (
-        <div className="absolute left-2 top-2 rounded bg-black/60 px-2 py-1 text-xs text-white">
-          {people.length} {people.length === 1 ? 'person' : 'people'} tracked
+      {isMonitoring && rosterCount > 0 && (
+        <div className="absolute left-2 top-2 rounded border border-guard-red/50 bg-guard-maroon/90 px-2 py-1 text-xs font-medium text-guard-yellow">
+          {rosterCount} {rosterCount === 1 ? 'person' : 'people'} detected
         </div>
       )}
       {sourceMode === 'file' && fileName && (
-        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded bg-black/60 px-2 py-1 text-xs text-white">
+        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between rounded border border-guard-maroon-light bg-guard-maroon/90 px-2 py-1 text-xs text-guard-cream">
           <span className="truncate">{fileName}</span>
           {isMonitoring && videoDuration > 0 && (
             <span className="ml-2 shrink-0 font-mono">

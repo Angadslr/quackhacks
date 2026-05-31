@@ -5,15 +5,12 @@ interface ControlsProps {
   onSourceModeChange: (mode: VideoSourceMode) => void
   videoFile: File | null
   onVideoFileChange: (file: File | null) => void
-  loopVideo: boolean
-  onLoopVideoChange: (loop: boolean) => void
   fileName: string | null
   isMonitoring: boolean
   isLoading: boolean
   isReady: boolean
   onStart: () => void
   onStop: () => void
-  onResetIncident: () => void
 }
 
 export function Controls({
@@ -21,34 +18,33 @@ export function Controls({
   onSourceModeChange,
   videoFile,
   onVideoFileChange,
-  loopVideo,
-  onLoopVideoChange,
   fileName,
   isMonitoring,
   isLoading,
   isReady,
   onStart,
   onStop,
-  onResetIncident,
 }: ControlsProps) {
   const canStart =
     sourceMode === 'webcam' || (sourceMode === 'file' && videoFile !== null)
 
   const startLabel =
-    sourceMode === 'file' ? 'Run Video Analysis' : 'Start Monitoring'
+    sourceMode === 'file' ? 'Run analysis' : 'Start monitoring'
+
+  const tabActive = 'bg-guard-red text-white'
+  const tabIdle =
+    'border border-guard-maroon-light/80 text-guard-cream/90 hover:bg-guard-maroon-mid/80'
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex gap-1">
         <button
           type="button"
           onClick={() => onSourceModeChange('webcam')}
           disabled={isMonitoring}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-            sourceMode === 'webcam'
-              ? 'bg-emerald-600 text-white'
-              : 'border border-slate-600 text-slate-300 hover:bg-slate-800'
-          } disabled:opacity-50`}
+          className={`rounded px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 sm:text-sm ${
+            sourceMode === 'webcam' ? tabActive : tabIdle
+          }`}
         >
           Webcam
         </button>
@@ -56,20 +52,18 @@ export function Controls({
           type="button"
           onClick={() => onSourceModeChange('file')}
           disabled={isMonitoring}
-          className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-            sourceMode === 'file'
-              ? 'bg-emerald-600 text-white'
-              : 'border border-slate-600 text-slate-300 hover:bg-slate-800'
-          } disabled:opacity-50`}
+          className={`rounded px-3 py-1.5 text-xs font-medium transition disabled:opacity-50 sm:text-sm ${
+            sourceMode === 'file' ? tabActive : tabIdle
+          }`}
         >
-          Video File
+          Video file
         </button>
       </div>
 
       {sourceMode === 'file' && (
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="cursor-pointer rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800">
-            Choose video…
+        <>
+          <label className="cursor-pointer rounded border border-guard-maroon-light/80 px-2.5 py-1.5 text-xs text-guard-cream transition hover:border-guard-yellow/50 sm:text-sm">
+            Choose…
             <input
               type="file"
               accept="video/*"
@@ -83,38 +77,23 @@ export function Controls({
             />
           </label>
           {fileName && (
-            <span className="max-w-xs truncate text-sm text-slate-400">
+            <span className="max-w-[120px] truncate text-xs text-guard-pool sm:max-w-[180px]">
               {fileName}
             </span>
           )}
-          {!fileName && (
-            <span className="text-sm text-slate-500">
-              MP4, WebM, MOV supported
-            </span>
-          )}
-          <label className="flex items-center gap-2 text-sm text-slate-400">
-            <input
-              type="checkbox"
-              checked={loopVideo}
-              disabled={isMonitoring}
-              onChange={(e) => onLoopVideoChange(e.target.checked)}
-              className="rounded border-slate-600"
-            />
-            Loop video
-          </label>
-        </div>
+        </>
       )}
 
-      <div className="flex flex-wrap gap-3">
+      <span className="inline-flex min-w-[7.25rem] justify-end">
         {!isMonitoring ? (
           <button
             type="button"
             onClick={onStart}
             disabled={isLoading || !canStart}
-            className="rounded-lg bg-emerald-600 px-5 py-2.5 font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="guard-btn-primary rounded px-3 py-1.5 text-xs sm:text-sm"
           >
             {isLoading
-              ? 'Loading pose model…'
+              ? 'Loading…'
               : sourceMode === 'file' && !isReady && videoFile
                 ? 'Loading video…'
                 : startLabel}
@@ -123,19 +102,12 @@ export function Controls({
           <button
             type="button"
             onClick={onStop}
-            className="rounded-lg bg-slate-700 px-5 py-2.5 font-medium text-white transition hover:bg-slate-600"
+            className="rounded border border-guard-yellow bg-guard-yellow/20 px-3 py-1.5 text-xs font-medium text-guard-yellow sm:text-sm"
           >
             Stop
           </button>
         )}
-        <button
-          type="button"
-          onClick={onResetIncident}
-          className="rounded-lg border border-slate-600 px-5 py-2.5 font-medium text-slate-300 transition hover:bg-slate-800"
-        >
-          Reset Incident
-        </button>
-      </div>
+      </span>
     </div>
   )
 }

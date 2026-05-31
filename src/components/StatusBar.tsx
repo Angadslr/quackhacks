@@ -1,21 +1,26 @@
+import type { RiskState } from '../types/risk'
 import type { VideoSourceMode } from '../types/videoSource'
 
 interface StatusBarProps {
   isMonitoring: boolean
   fps: number
   isLoading: boolean
-  poseCount: number
+  personCount: number
   sourceMode: VideoSourceMode
   fileName: string | null
+  isAlerting?: boolean
+  riskState?: RiskState
 }
 
 export function StatusBar({
   isMonitoring,
   fps,
   isLoading,
-  poseCount,
+  personCount,
   sourceMode,
   fileName,
+  isAlerting = false,
+  riskState = 'SAFE',
 }: StatusBarProps) {
   const sourceLabel =
     sourceMode === 'file'
@@ -24,44 +29,60 @@ export function StatusBar({
         : 'Video file'
       : 'Webcam'
 
+  const statusLabel = isMonitoring
+    ? isAlerting
+      ? 'ALERT'
+      : riskState
+    : 'OFF'
+
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl font-bold tracking-tight text-white">
-          POOL GUARD
-        </h1>
-        <span className="text-xs text-slate-500">
-          Client-side drowning detection
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-4 text-sm">
-        <span className="max-w-[200px] truncate text-slate-500">{sourceLabel}</span>
+    <header className="shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span
-            className={`h-2.5 w-2.5 rounded-full ${
-              isMonitoring
-                ? isLoading
-                  ? 'animate-pulse bg-yellow-400'
-                  : 'bg-emerald-400'
-                : 'bg-slate-600'
-            }`}
-          />
-          <span className="text-slate-400">
-            {isLoading
-              ? 'Loading model…'
-              : isMonitoring
-                ? 'Analyzing'
-                : 'Idle'}
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+            <span className="text-guard-white">my</span>
+            <span className="text-guard-red">guard</span>
+          </h1>
+          <span className="hidden rounded border border-guard-yellow/40 bg-guard-yellow/10 px-2 py-0.5 text-xs font-medium text-guard-yellow sm:inline">
+            Lifeguard monitor
           </span>
         </div>
-        {isMonitoring && !isLoading && (
-          <>
-            <span className="font-mono text-slate-400">FPS: {fps}</span>
-            <span className="font-mono text-slate-400">
-              People: {poseCount}
+        <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
+          <span
+            className={`inline-block min-w-[5.5rem] font-medium ${
+              isAlerting ? 'text-guard-red' : 'text-guard-cream/60'
+            }`}
+          >
+            {statusLabel}
+          </span>
+          <span className="hidden max-w-[140px] truncate text-guard-pool/80 md:inline">
+            {sourceLabel}
+          </span>
+          <div className="flex min-w-[5.5rem] items-center gap-2">
+            <span
+              className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                isMonitoring
+                  ? isLoading
+                    ? 'animate-pulse bg-guard-yellow'
+                    : 'bg-guard-red shadow-[0_0_8px_rgba(220,38,38,0.8)]'
+                  : 'bg-guard-maroon-light'
+              }`}
+            />
+            <span className="text-guard-cream/80">
+              {isLoading
+                ? 'Loading model…'
+                : isMonitoring
+                  ? 'On duty'
+                  : 'Off duty'}
             </span>
-          </>
-        )}
+          </div>
+          <span className="inline-block min-w-[4.5rem] font-mono tabular-nums text-guard-cream/70">
+            FPS: {isMonitoring && !isLoading ? fps : '—'}
+          </span>
+          <span className="inline-block min-w-[5.75rem] font-mono tabular-nums text-guard-cream/70">
+            People: {isMonitoring && !isLoading ? personCount : '—'}
+          </span>
+        </div>
       </div>
     </header>
   )

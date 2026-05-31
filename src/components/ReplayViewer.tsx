@@ -6,6 +6,14 @@ import { drawReplayFrame } from '../utils/skeletonRenderer'
 
 interface ReplayViewerProps {
   incidents: Incident[]
+  /** Gemini narrative for the most recent incident (keyed by incident id). */
+  summariesByIncidentId?: Record<string, string>
+  /** Replay narrative (used when id map is empty). */
+  fallbackSummary?: string | null
+  /** Alert-time briefing (shown above replay summary). */
+  fallbackBriefing?: string | null
+  summaryLoading?: boolean
+  summaryError?: string | null
 }
 
 function formatTime(timestamp: number): string {
@@ -18,14 +26,14 @@ function formatTime(timestamp: number): string {
 
 function ContributorSummary({ contributors }: { contributors: SignalBreakdown }) {
   const items = [
-    { label: 'Vertical posture', value: contributors.vertical },
-    { label: 'Arms pressing', value: contributors.arms },
+    { label: 'Submerged / lost track', value: contributors.disappearance },
     { label: 'Partial submersion', value: contributors.submersion },
     { label: 'Motion stasis', value: contributors.stasis },
+    { label: 'Surface distress', value: contributors.distress },
   ].filter((i) => i.value > 0)
 
   return (
-    <ul className="mt-2 space-y-1 text-xs text-slate-400">
+    <ul className="mt-2 space-y-1 text-xs text-guard-cream/60">
       {items.map((item) => (
         <li key={item.label}>
           {item.label}: +{item.value}
@@ -83,31 +91,38 @@ function ReplayCanvas({ incident }: { incident: Incident }) {
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="w-full max-w-md rounded-lg border border-slate-700"
+        className="w-full max-w-md rounded-lg border border-guard-maroon-light"
       />
-      <p className="mt-2 text-xs text-slate-500">
-        Frame {frameIndex + 1} / {incident.frames.length} — pose only, no video
-        stored
+      <p className="mt-2 text-xs text-guard-cream/50">
+        Frame {frameIndex + 1} / {incident.frames.length} — detection boxes only, no
+        video stored
       </p>
     </div>
   )
 }
 
-export function ReplayViewer({ incidents }: ReplayViewerProps) {
+export function ReplayViewer({
+  incidents,
+  summariesByIncidentId = {},
+  fallbackSummary = null,
+  fallbackBriefing = null,
+  summaryLoading = false,
+  summaryError = null,
+}: ReplayViewerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = incidents.find((i) => i.id === selectedId) ?? null
 
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-900/50 p-4">
-      <h2 className="mb-1 text-lg font-semibold text-white">
+    <section className="guard-panel p-4">
+      <h2 className="mb-1 text-lg font-semibold text-guard-white">
         Incident Replays
       </h2>
-      <p className="mb-4 text-sm text-slate-500">
-        Privacy-preserving — skeleton landmarks only, no video
+      <p className="mb-4 text-sm text-guard-cream/50">
+        Privacy-preserving — detection boxes only, no video
       </p>
 
       {incidents.length === 0 ? (
-        <p className="text-sm text-slate-500">No incidents yet</p>
+        <p className="text-sm text-guard-cream/50">No incidents yet</p>
       ) : (
         <div className="flex flex-col gap-4 lg:flex-row">
           <div className="flex flex-wrap gap-3">
@@ -118,22 +133,22 @@ export function ReplayViewer({ incidents }: ReplayViewerProps) {
                 onClick={() => setSelectedId(incident.id)}
                 className={`rounded-lg border p-3 text-left transition ${
                   selectedId === incident.id
-                    ? 'border-red-500 bg-red-500/10'
-                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                    ? 'border-guard-red bg-guard-red/15'
+                    : 'border-guard-maroon-light bg-guard-maroon-mid hover:border-guard-yellow/40'
                 }`}
               >
-                <p className="font-mono text-sm text-white">
+                <p className="font-mono text-sm text-guard-white">
                   {formatTime(incident.startTime)}
                 </p>
-                <p className="text-sm text-red-400">
+                <p className="text-sm font-medium text-guard-red">
                   Peak {Math.round(incident.peakRisk)}%
                 </p>
                 {incident.personId != null && (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-guard-cream/50">
                     Person #{incident.personId}
                   </p>
                 )}
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-guard-cream/50">
                   {(incident.durationMs / 1000).toFixed(1)}s captured
                 </p>
               </button>
@@ -143,23 +158,61 @@ export function ReplayViewer({ incidents }: ReplayViewerProps) {
           {selected && (
             <div className="flex-1">
               <ReplayCanvas key={selected.id} incident={selected} />
-              <div className="mt-3 rounded-lg border border-slate-700 bg-slate-800 p-3">
-                <p className="text-sm font-medium text-white">Incident details</p>
-                <p className="text-sm text-slate-400">
+              <div className="mt-3 rounded-lg border border-guard-maroon-light bg-guard-maroon-mid p-3">
+                <p className="text-sm font-medium text-guard-yellow">Incident details</p>
+                <p className="text-sm text-guard-cream/70">
                   Timestamp: {formatTime(selected.startTime)}
                 </p>
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-guard-cream/70">
                   Peak risk: {Math.round(selected.peakRisk)}%
                 </p>
                 {selected.personId != null && (
-                  <p className="text-sm text-slate-400">
+                  <p className="text-sm text-guard-cream/70">
                     Person: #{selected.personId}
                   </p>
                 )}
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-guard-cream/70">
                   Duration: {(selected.durationMs / 1000).toFixed(1)}s
                 </p>
                 <ContributorSummary contributors={selected.contributors} />
+                <div className="mt-3 space-y-3 border-t border-guard-maroon-light pt-3">
+                  {fallbackBriefing && (
+                    <div>
+                      <p className="text-sm font-medium text-guard-yellow">
+                        What happened
+                      </p>
+                      <p className="mt-1 text-sm leading-relaxed text-guard-cream/90">
+                        {fallbackBriefing}
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                  <p className="text-sm font-medium text-guard-yellow">
+                    Replay summary
+                  </p>
+                  {summaryLoading && (
+                    <p className="mt-1 text-xs text-guard-cream/50">
+                      Generating summary…
+                    </p>
+                  )}
+                  {(summariesByIncidentId[selected.id] ?? fallbackSummary) ? (
+                    <p className="mt-1 text-sm leading-relaxed text-guard-cream/85">
+                      {summariesByIncidentId[selected.id] ?? fallbackSummary}
+                    </p>
+                  ) : (
+                    !summaryLoading &&
+                    (summaryError ? (
+                      <p className="mt-1 text-xs leading-relaxed text-guard-cream/60">
+                        Summary unavailable — {summaryError}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-guard-cream/45">
+                        Waiting for Gemini analysis…
+                      </p>
+                    ))
+                  )}
+                  </div>
+                </div>
               </div>
             </div>
           )}

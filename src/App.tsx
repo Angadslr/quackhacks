@@ -1,24 +1,59 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
-import { AlertBanner } from './components/AlertBanner'
-import { ContributorsPanel } from './components/ContributorsPanel'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { PersonDetection } from './types/detection'
+import type { Incident } from './types/pose'
 import { Controls } from './components/Controls'
+import { DevTools } from './components/DevTools'
+import { DrowningAlertOverlay } from './components/DrowningAlertOverlay'
+import { LiveTimelineLog } from './components/LiveTimelineLog'
 import { ReplayViewer } from './components/ReplayViewer'
-import { RiskMeter } from './components/RiskMeter'
 import { StatusBar } from './components/StatusBar'
 import { VideoFeed } from './components/VideoFeed'
-import { usePoseDetection } from './hooks/usePoseDetection'
+import {
+  useIncidentBriefing,
+  type IncidentBriefingContext,
+  type IncidentBriefingRequestPayload,
+} from './hooks/useIncidentBriefing'
+import { usePersonDetection } from './hooks/usePersonDetection'
 import { useRiskScoring } from './hooks/useRiskScoring'
+import { useTimelineLog } from './hooks/useTimelineLog'
 import { useVideoSource } from './hooks/useVideoSource'
+import { useZones } from './hooks/useZones'
 import type { VideoSourceMode } from './types/videoSource'
+import type { ZoneKind } from './types/zone'
+import { serializeIncident } from './utils/serializeIncident'
+
+interface LatchedAlert {
+  alertTime: Date
+  briefing: string | null
+  incidentSummary: string | null
+  briefingLoading: boolean
+  briefingError: string | null
+}
 
 function App() {
   const [isMonitoring, setIsMonitoring] = useState(false)
-  const [poses, setPoses] = useState<NormalizedLandmark[][]>([])
-  const [alertTime, setAlertTime] = useState<Date | null>(null)
+  const [detections, setDetections] = useState<PersonDetection[]>([])
+  const [latchedAlert, setLatchedAlert] = useState<LatchedAlert | null>(null)
+  const [persistedIncidents, setPersistedIncidents] = useState<Incident[]>([])
   const [sourceMode, setSourceMode] = useState<VideoSourceMode>('webcam')
   const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [loopVideo, setLoopVideo] = useState(true)
+  const [incidentSummaries, setIncidentSummaries] = useState<
+    Record<string, string>
+  >({})
+  const { zones, addZone, removeZone, clearZones } = useZones()
+  const [zoneEditing, setZoneEditing] = useState(false)
+  const [zoneDrawKind, setZoneDrawKind] = useState<ZoneKind>('monitor')
+  const { events, append, clear, maybeLogRiskSpike } = useTimelineLog()
+  const wasAlertingRef = useRef(false)
+  const wasMonitoringRef = useRef(false)
+  const alertIncidentIdRef = useRef<string | null>(null)
+  const persistedIncidentIdsRef = useRef<string[]>([])
+  const [briefingRequest, setBriefingRequest] =
+    useState<IncidentBriefingRequestPayload | null>(null)
+
+  const handleVideoEnded = useCallback(() => {
+    setIsMonitoring(false)
+  }, [])
 
   const {
     videoRef,
@@ -32,39 +67,88 @@ function App() {
     mode: sourceMode,
     videoFile,
     isMonitoring,
-    loop: loopVideo,
+    onVideoEnded: handleVideoEnded,
   })
 
-  const onPoses = useCallback((next: NormalizedLandmark[][]) => {
-    setPoses(next)
+  const onDetections = useCallback((next: PersonDetection[]) => {
+    setDetections(next)
   }, [])
 
-  const onPosesWithTimestamp = useCallback(
-    (next: NormalizedLandmark[][], _timestamp: number) => {
-      onPoses(next)
+  const onDetectionsWithTimestamp = useCallback(
+    (next: PersonDetection[], _timestamp: number) => {
+      onDetections(next)
     },
-    [onPoses],
+    [onDetections],
   )
 
-  const { fps, isLoading, error: poseError, poseCount } = usePoseDetection({
+  const { fps, isLoading, error: detectionError, personCount } = usePersonDetection({
     isMonitoring,
     isReady,
     videoRef,
     useVideoTimestamp: sourceMode === 'file',
-    onPoses: onPosesWithTimestamp,
+    onDetections: onDetectionsWithTimestamp,
   })
 
   const {
-    people,
+    activePeople,
     riskScore,
     riskState,
     contributors,
     highestRiskPersonId,
-    isAlerting,
     highRiskDurationMs,
     incidents,
+    isAlerting,
     resetAlert,
-  } = useRiskScoring(poses, isMonitoring)
+    resetSession,
+  } = useRiskScoring(detections, isMonitoring, zones)
+
+  const handleBriefingReady = useCallback(
+    (result: { briefing: string; incidentSummary: string }) => {
+      append(result.briefing, 'ai', Math.round(riskScore))
+      setIncidentSummaries((prev) => {
+        const next = { ...prev }
+        for (const id of persistedIncidentIdsRef.current) {
+          next[id] = result.incidentSummary
+        }
+        const alertId = alertIncidentIdRef.current
+        if (alertId) {
+          next[alertId] = result.incidentSummary
+        }
+        return next
+      })
+    },
+    [append, riskScore],
+  )
+
+  const {
+    briefing,
+    incidentSummary,
+    loading: briefingLoading,
+    error: briefingError,
+    reset: resetBriefing,
+  } = useIncidentBriefing({
+    request: briefingRequest,
+    onReady: handleBriefingReady,
+  })
+
+  const clearPersistedAlert = useCallback(() => {
+    setLatchedAlert(null)
+    setPersistedIncidents([])
+    setBriefingRequest(null)
+    persistedIncidentIdsRef.current = []
+    setIncidentSummaries({})
+    resetBriefing()
+    resetAlert()
+  }, [resetAlert, resetBriefing])
+
+  const handleDismissAlert = useCallback(() => {
+    clearPersistedAlert()
+  }, [clearPersistedAlert])
+
+  const handleStartMonitoring = useCallback(() => {
+    clearPersistedAlert()
+    setIsMonitoring(true)
+  }, [clearPersistedAlert])
 
   const handleSourceModeChange = useCallback((mode: VideoSourceMode) => {
     setIsMonitoring(false)
@@ -72,82 +156,175 @@ function App() {
     if (mode === 'webcam') {
       setVideoFile(null)
     }
-    setPoses([])
-    resetAlert()
-  }, [resetAlert])
+    setDetections([])
+    resetSession()
+    clearPersistedAlert()
+    clear()
+    append(
+      mode === 'webcam' ? 'Input: webcam selected' : 'Input: video file selected',
+      'system',
+    )
+  }, [resetSession, clearPersistedAlert, clear, append])
 
   const handleVideoFileChange = useCallback((file: File | null) => {
     setIsMonitoring(false)
     setVideoFile(file)
-    setPoses([])
-    resetAlert()
-  }, [resetAlert])
+    setDetections([])
+    resetSession()
+    clearPersistedAlert()
+    if (file) {
+      append(`Video loaded: ${file.name}`, 'system')
+    }
+  }, [resetSession, clearPersistedAlert, append])
 
   useEffect(() => {
-    if (isAlerting && !alertTime) {
-      setAlertTime(new Date())
+    setLatchedAlert((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        briefing: briefing ?? prev.briefing,
+        incidentSummary: incidentSummary ?? prev.incidentSummary,
+        briefingLoading,
+        briefingError,
+      }
+    })
+  }, [briefing, incidentSummary, briefingLoading, briefingError])
+
+  useEffect(() => {
+    if (isAlerting && !wasAlertingRef.current) {
+      const latest = incidents[0] ?? null
+      const snapIncidents = [...incidents]
+      const incidentId = latest?.id ?? `alert-${Date.now()}`
+
+      alertIncidentIdRef.current = latest?.id ?? null
+      persistedIncidentIdsRef.current = snapIncidents.map((i) => i.id)
+      setPersistedIncidents(snapIncidents)
+
+      const context: IncidentBriefingContext = {
+        riskScore,
+        riskState,
+        contributors,
+        personId: highestRiskPersonId,
+        highRiskDurationMs,
+        timeline: events.slice(0, 15).map((e) => ({
+          message: e.message,
+          kind: e.kind,
+          time: e.time.toISOString(),
+        })),
+        incident: latest ? serializeIncident(latest) : null,
+      }
+
+      setBriefingRequest({ id: incidentId, context })
+      setLatchedAlert({
+        alertTime: new Date(),
+        briefing: null,
+        incidentSummary: null,
+        briefingLoading: true,
+        briefingError: null,
+      })
+      append('Drowning alert triggered — check pool immediately', 'alert', 100)
+      append('Requesting Gemini incident analysis…', 'info')
     }
-    if (!isAlerting) {
-      setAlertTime(null)
+    wasAlertingRef.current = isAlerting
+  }, [
+    isAlerting,
+    append,
+    incidents,
+    riskScore,
+    riskState,
+    contributors,
+    highestRiskPersonId,
+    highRiskDurationMs,
+    events,
+  ])
+
+  useEffect(() => {
+    if (isMonitoring && !wasMonitoringRef.current) {
+      append('Monitoring started', 'system')
+    } else if (!isMonitoring && wasMonitoringRef.current) {
+      append('Monitoring stopped', 'system')
+      if (isAlerting) {
+        resetAlert()
+      }
     }
-  }, [isAlerting, alertTime])
+    wasMonitoringRef.current = isMonitoring
+  }, [isMonitoring, isAlerting, resetAlert, append])
+
+  useEffect(() => {
+    if (!isMonitoring || activePeople.length === 0) return
+    const top = activePeople[0]
+    if (top) {
+      maybeLogRiskSpike(top.riskScore, `Person #${top.id}`)
+    }
+  }, [isMonitoring, activePeople, maybeLogRiskSpike])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.target !== document.body) return
       e.preventDefault()
       if (sourceMode === 'file' && !videoFile) return
-      setIsMonitoring((prev) => !prev)
+      setIsMonitoring((prev) => {
+        if (!prev) {
+          clearPersistedAlert()
+        }
+        return !prev
+      })
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [sourceMode, videoFile])
+  }, [sourceMode, videoFile, clearPersistedAlert])
 
-  const error = videoError ?? poseError
+  const displayIncidents =
+    persistedIncidents.length > 0 ? persistedIncidents : incidents
+
+  const error = videoError ?? detectionError
 
   return (
-    <div className="mx-auto min-h-screen max-w-6xl px-4 py-6">
-      <StatusBar
-        isMonitoring={isMonitoring}
-        fps={fps}
-        isLoading={isLoading}
-        poseCount={poseCount}
-        sourceMode={sourceMode}
-        fileName={fileName}
-      />
-
-      {error && (
-        <div className="mt-4 rounded-lg border border-red-800 bg-red-950/50 px-4 py-3 text-red-300">
-          {error}
-        </div>
+    <div className="app-shell flex min-h-screen flex-col px-3 py-3 sm:px-4 sm:py-4">
+      {latchedAlert && (
+        <DrowningAlertOverlay
+          alertTime={latchedAlert.alertTime}
+          onDismiss={handleDismissAlert}
+        />
       )}
 
-      <div className="mt-4 rounded-lg border border-slate-700 bg-slate-900 p-4">
-        <p className="mb-3 text-sm font-medium text-slate-300">Input source</p>
+      <div className="controls-bar flex flex-nowrap items-center justify-between gap-2 px-3 py-2">
+        <StatusBar
+          isMonitoring={isMonitoring}
+          fps={fps}
+          isLoading={isLoading}
+          personCount={personCount}
+          sourceMode={sourceMode}
+          fileName={fileName}
+          isAlerting={isAlerting || latchedAlert !== null}
+          riskState={riskState}
+        />
         <Controls
           sourceMode={sourceMode}
           onSourceModeChange={handleSourceModeChange}
           videoFile={videoFile}
           onVideoFileChange={handleVideoFileChange}
-          loopVideo={loopVideo}
-          onLoopVideoChange={setLoopVideo}
           fileName={fileName}
           isMonitoring={isMonitoring}
           isLoading={isLoading}
           isReady={isReady}
-          onStart={() => setIsMonitoring(true)}
+          onStart={handleStartMonitoring}
           onStop={() => setIsMonitoring(false)}
-          onResetIncident={resetAlert}
         />
-        <p className="mt-2 text-xs text-slate-600">
-          Press Space to start/stop · Switch to <strong className="text-slate-400">Video File</strong> to test pool footage
-        </p>
       </div>
 
-      <main className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
+      {error && (
+        <div className="mt-2 rounded-lg border-2 border-guard-red bg-guard-red/20 px-3 py-2 text-sm text-guard-cream">
+          {error}
+        </div>
+      )}
+
+      <main className="mx-auto mt-3 grid min-h-0 w-[80%] max-w-[1020px] flex-1 gap-3 lg:grid-cols-[minmax(0,768px)_224px] xl:grid-cols-[minmax(0,768px)_240px]">
+        <div className="mx-auto w-full max-w-[768px]">
         <VideoFeed
           videoRef={videoRef}
-          people={people}
+          activePeople={activePeople}
+          rosterCount={activePeople.length}
           isMonitoring={isMonitoring}
           mirrored={mirrored}
           sourceMode={sourceMode}
@@ -155,54 +332,43 @@ function App() {
           fileName={fileName}
           videoDuration={videoDuration}
           videoCurrentTime={videoCurrentTime}
+          zones={zones}
+          zoneEditing={zoneEditing}
+          zoneDrawKind={zoneDrawKind}
+          onZoneCreate={addZone}
+          onZoneRemove={removeZone}
         />
+        </div>
 
-        <aside className="flex flex-col gap-4">
-          <RiskMeter score={riskScore} state={riskState} />
-          <ContributorsPanel
-            contributors={contributors}
-            score={riskScore}
-            personId={highestRiskPersonId}
-            peopleCount={people.length}
-          />
-          {people.length > 1 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900 p-3">
-              <p className="mb-2 text-xs font-medium text-slate-400">
-                Per-person risk
-              </p>
-              <ul className="space-y-1">
-                {people.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex justify-between text-sm text-slate-300"
-                  >
-                    <span>Person #{p.id}</span>
-                    <span className="font-mono">{Math.round(p.riskScore)}%</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {isMonitoring && riskScore > 65 && !isAlerting && (
-            <p className="text-xs text-slate-500">
-              High risk for {(highRiskDurationMs / 1000).toFixed(1)}s — alert at
-              4s
-            </p>
-          )}
-        </aside>
+        <LiveTimelineLog events={events} />
       </main>
 
-      <div className="mt-4">
-        <AlertBanner
-          isAlerting={isAlerting}
-          riskState={riskState}
-          alertTime={alertTime}
-        />
-      </div>
+      {displayIncidents.length > 0 && (
+        <div className="mx-auto mt-4 w-[80%] max-w-[1020px]">
+          <ReplayViewer
+            incidents={displayIncidents}
+            summariesByIncidentId={incidentSummaries}
+            fallbackBriefing={latchedAlert?.briefing}
+            fallbackSummary={latchedAlert?.incidentSummary}
+            summaryLoading={latchedAlert?.briefingLoading ?? false}
+            summaryError={latchedAlert?.briefingError}
+          />
+        </div>
+      )}
 
-      <div className="mt-6">
-        <ReplayViewer incidents={incidents} />
-      </div>
+      <p className="mt-2 text-center text-[10px] text-guard-cream/35 sm:text-xs">
+        Space to start/stop · Video file mode for pool footage tests · Gemini API
+        for incident briefings
+      </p>
+
+      <DevTools
+        zones={zones}
+        editing={zoneEditing}
+        drawKind={zoneDrawKind}
+        onToggleEditing={() => setZoneEditing((prev) => !prev)}
+        onDrawKindChange={setZoneDrawKind}
+        onClear={clearZones}
+      />
     </div>
   )
 }

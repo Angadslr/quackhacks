@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
+import type { PersonDetection } from '../types/detection'
 import type { TrackedPerson } from '../types/person'
 import type { Incident } from '../types/pose'
-import type { PoseHistoryEntry, RiskResult, RiskState } from '../types/risk'
+import type { DetectionHistoryEntry, RiskResult, RiskState } from '../types/risk'
 import { AlertSound } from '../utils/alertSound'
-import { PersonTracker } from '../utils/personTracker'
+import { DetectionTracker } from '../utils/detectionTracker'
 import { computeRisk } from '../utils/riskEngine'
 import { ReplayRecorder } from '../utils/replayRecorder'
+import type { Zone } from '../types/zone'
 
 const ALERT_THRESHOLD = 65
-const ALERT_DURATION_MS = 4000
-const HISTORY_DURATION_MS = 3000
+/** Brief spike above threshold is enough to latch the alert until dismissed */
+const ALERT_DURATION_MS = 400
+const HISTORY_DURATION_MS = 5000
 
 interface UseRiskScoringResult {
   people: TrackedPerson[]
+  activePeople: TrackedPerson[]
   riskScore: number
   riskState: RiskState
   contributors: RiskResult['contributors']
@@ -22,27 +25,32 @@ interface UseRiskScoringResult {
   highRiskDurationMs: number
   incidents: Incident[]
   resetAlert: () => void
+  resetSession: () => void
 }
 
 export function useRiskScoring(
-  poses: NormalizedLandmark[][],
+  detections: PersonDetection[],
   isMonitoring: boolean,
+  zones: Zone[] = [],
 ): UseRiskScoringResult {
   const recorderRef = useRef(new ReplayRecorder())
   const alertSoundRef = useRef(new AlertSound())
-  const trackerRef = useRef(new PersonTracker())
-  const historyMapRef = useRef<Map<number, PoseHistoryEntry[]>>(new Map())
+  const trackerRef = useRef(new DetectionTracker())
+  const historyMapRef = useRef<Map<number, DetectionHistoryEntry[]>>(new Map())
+  const rosterRef = useRef<Map<number, TrackedPerson>>(new Map())
+  const wasMonitoringRef = useRef(false)
   const hasTriggeredAlertRef = useRef(false)
   const peakAtAlertRef = useRef<{ person: TrackedPerson } | null>(null)
 
   const [people, setPeople] = useState<TrackedPerson[]>([])
+  const [activePeople, setActivePeople] = useState<TrackedPerson[]>([])
   const [riskScore, setRiskScore] = useState(0)
   const [riskState, setRiskState] = useState<RiskState>('SAFE')
   const [contributors, setContributors] = useState<RiskResult['contributors']>({
-    vertical: 0,
-    arms: 0,
     submersion: 0,
     stasis: 0,
+    disappearance: 0,
+    distress: 0,
   })
   const [highestRiskPersonId, setHighestRiskPersonId] = useState<number | null>(
     null,
@@ -59,76 +67,125 @@ export function useRiskScoring(
     alertSoundRef.current.stop()
   }, [])
 
-  useEffect(() => {
-    if (!isMonitoring) {
-      resetAlert()
-      trackerRef.current.reset()
-      historyMapRef.current.clear()
-      setPeople([])
-      setRiskScore(0)
-      setRiskState('SAFE')
-      setContributors({ vertical: 0, arms: 0, submersion: 0, stasis: 0 })
-      setHighestRiskPersonId(null)
-      setHighRiskDurationMs(0)
-      return
-    }
+  const resetSession = useCallback(() => {
+    resetAlert()
+    trackerRef.current.reset()
+    historyMapRef.current.clear()
+    rosterRef.current.clear()
+    setPeople([])
+    setActivePeople([])
+    setRiskScore(0)
+    setRiskState('SAFE')
+    setContributors({ submersion: 0, stasis: 0, disappearance: 0, distress: 0 })
+    setHighestRiskPersonId(null)
+    setHighRiskDurationMs(0)
+  }, [resetAlert])
 
-    if (poses.length === 0) {
-      setPeople([])
-      setRiskScore(0)
-      setRiskState('SAFE')
-      setContributors({ vertical: 0, arms: 0, submersion: 0, stasis: 0 })
-      setHighestRiskPersonId(null)
-      return
+  // New monitoring run → fresh tracker; stop → keep roster on screen.
+  useEffect(() => {
+    if (isMonitoring && !wasMonitoringRef.current) {
+      resetSession()
+    } else if (!isMonitoring && wasMonitoringRef.current) {
+      alertSoundRef.current.stop()
+      setActivePeople([])
     }
+    wasMonitoringRef.current = isMonitoring
+  }, [isMonitoring, resetSession, resetAlert])
+
+  useEffect(() => {
+    if (!isMonitoring) return
 
     const now = performance.now()
-    const ids = trackerRef.current.assignIds(poses, now)
-    const tracked: TrackedPerson[] = []
+    const trackedRaw = trackerRef.current.assignAndTrack(detections, now, zones)
+    const active: TrackedPerson[] = []
+    const activeIds = new Set<number>()
 
-    for (let i = 0; i < poses.length; i++) {
-      const id = ids[i]
-      const landmarks = poses[i]
-      const history = historyMapRef.current.get(id) ?? []
-      const result = computeRisk(landmarks, history, now)
-
-      history.push({ timestamp: now, landmarks })
-      const cutoff = now - HISTORY_DURATION_MS
-      historyMapRef.current.set(
-        id,
-        history.filter((e) => e.timestamp >= cutoff),
+    for (const item of trackedRaw) {
+      activeIds.add(item.id)
+      const history = historyMapRef.current.get(item.id) ?? []
+      const result = computeRisk(
+        {
+          bbox: item.bbox,
+          confidence: item.confidence,
+          center: item.center,
+          isMissing: item.isMissing,
+          missingSince: item.missingSince,
+          nearestNeighborDist: item.nearestNeighborDist,
+          wasLoneSwimmer: item.wasLoneSwimmer,
+          history,
+          zones,
+        },
+        now,
       )
 
-      tracked.push({
-        id,
-        landmarks,
+      if (item.bbox && !item.isMissing) {
+        history.push({
+          timestamp: now,
+          bbox: item.bbox,
+          confidence: item.confidence,
+          center: item.center,
+        })
+        const cutoff = now - HISTORY_DURATION_MS
+        historyMapRef.current.set(
+          item.id,
+          history.filter((e) => e.timestamp >= cutoff),
+        )
+      }
+
+      const person: TrackedPerson = {
+        id: item.id,
+        bbox: item.bbox,
+        confidence: item.confidence,
+        center: item.center,
+        isMissing: item.isMissing,
+        isTracked: true,
         riskScore: result.score,
         riskState: result.state,
         contributors: result.contributors,
-      })
+      }
+      active.push(person)
+      rosterRef.current.set(item.id, person)
     }
 
-    tracked.sort((a, b) => b.riskScore - a.riskScore)
-    const highest = tracked[0]
+    const roster: TrackedPerson[] = []
+    for (const [, entry] of rosterRef.current) {
+      if (activeIds.has(entry.id)) {
+        roster.push(entry)
+      } else {
+        roster.push({
+          ...entry,
+          isTracked: false,
+          bbox: null,
+          isMissing: false,
+        })
+      }
+    }
+    roster.sort((a, b) => a.id - b.id)
+
+    const activeSorted = [...active].sort((a, b) => b.riskScore - a.riskScore)
+    const highest = activeSorted[0]
     const maxScore = highest?.riskScore ?? 0
     const maxState = highest?.riskState ?? 'SAFE'
     const maxContributors = highest?.contributors ?? {
-      vertical: 0,
-      arms: 0,
       submersion: 0,
       stasis: 0,
+      disappearance: 0,
+      distress: 0,
     }
 
     recorderRef.current.pushFrame(
       now,
-      tracked.map((p) => ({
-        landmarks: p.landmarks,
+      active.map((p) => ({
+        bbox: p.bbox,
+        center: p.center,
+        isMissing: p.isMissing,
         riskScore: p.riskScore,
       })),
       maxScore,
     )
 
-    setPeople(tracked)
+    setPeople(roster)
+    setActivePeople(activeSorted)
     setRiskScore(maxScore)
     setRiskState(maxState)
     setContributors(maxContributors)
@@ -158,14 +215,11 @@ export function useRiskScoring(
         )
         setIncidents(recorderRef.current.getIncidents())
       }
-    } else {
-      hasTriggeredAlertRef.current = false
+    } else if (!hasTriggeredAlertRef.current) {
       peakAtAlertRef.current = null
       recorderRef.current.resetHighRiskTracking()
-      setIsAlerting(false)
-      alertSoundRef.current.stop()
     }
-  }, [poses, isMonitoring, resetAlert])
+  }, [detections, isMonitoring, zones])
 
   useEffect(() => {
     return () => {
@@ -175,6 +229,7 @@ export function useRiskScoring(
 
   return {
     people,
+    activePeople,
     riskScore,
     riskState,
     contributors,
@@ -183,5 +238,6 @@ export function useRiskScoring(
     highRiskDurationMs,
     incidents,
     resetAlert,
+    resetSession,
   }
 }

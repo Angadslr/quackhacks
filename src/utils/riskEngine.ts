@@ -1,169 +1,248 @@
-import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
-import type { PoseHistoryEntry, RiskResult } from '../types/risk'
+import type { NormalizedBBox } from '../types/detection'
+import type { DetectionHistoryEntry } from './detectionTracker'
+import {
+  isLoneSwimmer,
+  isSafeBystander,
+  postureExtremeness,
+} from './poolPosture'
+import type { RiskResult } from '../types/risk'
 import { getRiskState } from '../types/risk'
-import { POSE_LANDMARK } from '../types/pose'
-import { averageDisplacement, getTorsoMidpoints } from './poseMath'
+import type { Zone } from '../types/zone'
+import { zoneVerdict } from '../types/zone'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
-/** Torso angle from horizontal: 0° = lying flat, 90° = upright */
-export function getTorsoAngleDeg(landmarks: NormalizedLandmark[]): number | null {
-  const midpoints = getTorsoMidpoints(landmarks)
-  if (!midpoints) return null
-
-  const { shoulderMid, hipMid } = midpoints
-  const dx = shoulderMid.x - hipMid.x
-  const dy = shoulderMid.y - hipMid.y
-  return Math.abs((Math.atan2(-dy, dx) * 180) / Math.PI)
-}
-
-/**
- * 0 when lying down, 1 when upright. Drowning distress signals only apply
- * when the body is roughly vertical in the water — not when recumbent on a floor.
- */
-function uprightFactor(torsoAngleDeg: number | null): number {
-  if (torsoAngleDeg === null) return 0
-  return clamp((torsoAngleDeg - 40) / 35, 0, 1)
-}
-
-function computeVerticalScore(torsoAngleDeg: number | null): number {
-  if (torsoAngleDeg === null) return 0
-  return clamp(((torsoAngleDeg - 20) / 50) * 100, 0, 100)
-}
-
-function computeArmsScore(
-  landmarks: NormalizedLandmark[],
-  torsoAngleDeg: number | null,
+function centerDisplacement(
+  current: { x: number; y: number },
+  past: { x: number; y: number },
 ): number {
-  // Arms-below-shoulders is normal when lying on a floor — require upright torso
-  if (torsoAngleDeg === null || torsoAngleDeg < 55) return 0
-
-  const ls = landmarks[POSE_LANDMARK.LEFT_SHOULDER]
-  const rs = landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
-  const lw = landmarks[POSE_LANDMARK.LEFT_WRIST]
-  const rw = landmarks[POSE_LANDMARK.RIGHT_WRIST]
-
-  if (!ls || !rs || !lw || !rw) return 0
-
-  const margin = 0.04
-  const leftBelow =
-    lw.y > ls.y + margin && (lw.visibility ?? 1) > 0.5
-  const rightBelow =
-    rw.y > rs.y + margin && (rw.visibility ?? 1) > 0.5
-
-  if (leftBelow && rightBelow) return 100
-  if (leftBelow || rightBelow) return 50
-  return 0
+  const dx = current.x - past.x
+  const dy = current.y - past.y
+  return Math.sqrt(dx * dx + dy * dy)
 }
 
-function computeSubmersionScore(
-  landmarks: NormalizedLandmark[],
-  torsoAngleDeg: number | null,
+function averageCenterDisplacement(
+  current: { x: number; y: number },
+  history: DetectionHistoryEntry[],
+  now: number,
+  windowMs: number,
 ): number {
-  // Low visibility from a floor angle ≠ submerged legs in water
-  if (torsoAngleDeg === null || torsoAngleDeg < 45) return 0
+  const cutoff = now - windowMs
+  const past = history.find((e) => e.timestamp <= cutoff)
+  if (!past) return Infinity
+  return centerDisplacement(current, past.center)
+}
 
-  const nose = landmarks[POSE_LANDMARK.NOSE]
-  const ls = landmarks[POSE_LANDMARK.LEFT_SHOULDER]
-  const rs = landmarks[POSE_LANDMARK.RIGHT_SHOULDER]
-  const lh = landmarks[POSE_LANDMARK.LEFT_HIP]
-  const rh = landmarks[POSE_LANDMARK.RIGHT_HIP]
-  const la = landmarks[POSE_LANDMARK.LEFT_ANKLE]
-  const ra = landmarks[POSE_LANDMARK.RIGHT_ANKLE]
-
-  if (!nose || !ls || !rs || !lh || !rh || !la || !ra) return 0
-
-  const headVis =
-    ((nose.visibility ?? 1) + (ls.visibility ?? 1) + (rs.visibility ?? 1)) / 3
-  const hipVis = ((lh.visibility ?? 1) + (rh.visibility ?? 1)) / 2
-  const ankleVis = ((la.visibility ?? 1) + (ra.visibility ?? 1)) / 2
-
-  // Drowning pattern: head clearly visible, lower body hidden underwater
-  if (headVis < 0.6) return 0
-  if (hipVis > 0.7) return 0
-
-  return clamp((1 - hipVis) * 40 + (1 - ankleVis) * 60, 0, 100)
+function computeSubmersionScore(confidence: number): number {
+  return clamp((0.65 - confidence) / 0.4, 0, 1) * 100
 }
 
 function computeStasisScore(
-  landmarks: NormalizedLandmark[],
-  history: PoseHistoryEntry[],
+  center: { x: number; y: number },
+  history: DetectionHistoryEntry[],
   now: number,
-  upright: number,
 ): number {
-  if (upright < 0.3) return 0
-
-  const threeSecondsAgo = now - 3000
-  const pastEntry = history.find((entry) => entry.timestamp <= threeSecondsAgo)
-
-  if (!pastEntry) return 0
-
-  const displacement = averageDisplacement(landmarks, pastEntry.landmarks)
-  const raw = clamp(1 - displacement / 0.03, 0, 1) * 100
-
-  // Stillness only matters when upright; lying still on a floor is not distress
-  return raw * upright
+  const displacement = averageCenterDisplacement(center, history, now, 3000)
+  if (!Number.isFinite(displacement)) return 0
+  return clamp((1 - displacement / 0.035) * 100, 0, 100)
 }
 
-export function computeRisk(
-  landmarks: NormalizedLandmark[] | null,
-  history: PoseHistoryEntry[],
-  now = performance.now(),
+function computeDisappearanceScore(
+  missingSince: number | null,
+  now: number,
+): number {
+  if (missingSince === null) return 0
+  const missingMs = now - missingSince
+  if (missingMs < 1500) return 0
+  return clamp(((missingMs - 1500) / 2500) * 100, 0, 100)
+}
+
+export interface RiskInput {
+  bbox: NormalizedBBox | null
+  confidence: number
+  center: { x: number; y: number }
+  isMissing: boolean
+  missingSince: number | null
+  nearestNeighborDist: number
+  wasLoneSwimmer: boolean
+  history: DetectionHistoryEntry[]
+  zones: Zone[]
+}
+
+const SAFE: RiskResult = {
+  score: 0,
+  state: 'SAFE',
+  contributors: { submersion: 0, stasis: 0, disappearance: 0, distress: 0 },
+}
+
+/** Calibrated safe zone — never alert, no exceptions. */
+function safeZoneResult(): RiskResult {
+  return SAFE
+}
+
+/** Calibrated monitor zone — aggressive scoring for demo calibration. */
+function monitorZoneResult(
+  bbox: NormalizedBBox | null,
+  confidence: number,
+  center: { x: number; y: number },
+  history: DetectionHistoryEntry[],
+  isMissing: boolean,
+  missingSince: number | null,
+  now: number,
 ): RiskResult {
-  if (!landmarks || landmarks.length < 33) {
+  if (isMissing) {
+    const missingMs = missingSince !== null ? now - missingSince : 0
+    const score = missingMs >= 800 ? 98 : 92
     return {
-      score: 0,
-      state: 'SAFE',
-      contributors: { vertical: 0, arms: 0, submersion: 0, stasis: 0 },
+      score,
+      state: 'CRITICAL',
+      contributors: {
+        submersion: 0,
+        stasis: 0,
+        disappearance: score,
+        distress: 0,
+      },
     }
   }
 
-  const torsoAngle = getTorsoAngleDeg(landmarks)
-  const upright = uprightFactor(torsoAngle)
+  if (!bbox) return SAFE
 
-  const verticalScore = computeVerticalScore(torsoAngle)
-  const armsScore = computeArmsScore(landmarks, torsoAngle)
-  const submersionScore = computeSubmersionScore(landmarks, torsoAngle)
-  const stasisScore = computeStasisScore(landmarks, history, now, upright)
+  const move1s = averageCenterDisplacement(center, history, now, 1000)
+  const move2s = averageCenterDisplacement(center, history, now, 2000)
+  const isMoving =
+    (Number.isFinite(move1s) && move1s > 0.004) ||
+    (Number.isFinite(move2s) && move2s > 0.008)
 
-  const contributors = {
-    vertical: Math.round(verticalScore * 0.4),
-    arms: Math.round(armsScore * 0.25),
-    submersion: Math.round(submersionScore * 0.25),
-    stasis: Math.round(stasisScore * 0.1),
+  // Anyone moving in a monitor zone is treated as critical.
+  if (isMoving) {
+    const score = clamp(90 + (move2s !== Infinity ? move2s * 120 : 0), 90, 99)
+    return {
+      score,
+      state: 'CRITICAL',
+      contributors: {
+        submersion: 0,
+        stasis: 0,
+        disappearance: 0,
+        distress: Math.round(score),
+      },
+    }
   }
 
+  // Stationary but present in monitor — still elevated (float / distress).
+  const stillness = computeStasisScore(center, history, now)
+  const posture = postureExtremeness(bbox) * 100
+  const score = clamp(82 + stillness * 0.1 + posture * 0.08, 82, 94)
+
+  return {
+    score,
+    state: getRiskState(score),
+    contributors: {
+      submersion: Math.round(computeSubmersionScore(confidence) * 0.15),
+      stasis: Math.round(stillness * 0.25),
+      disappearance: 0,
+      distress: Math.round(score * 0.6),
+    },
+  }
+}
+
+function disappearanceResult(missingSince: number | null, now: number): RiskResult {
+  const disappearanceScore = computeDisappearanceScore(missingSince, now)
+  let score = disappearanceScore
+  if (missingSince !== null && now - missingSince >= 3500) {
+    score = Math.max(score, 80)
+  }
+  return {
+    score,
+    state: getRiskState(score),
+    contributors: {
+      submersion: 0,
+      stasis: 0,
+      disappearance: Math.round(disappearanceScore),
+      distress: 0,
+    },
+  }
+}
+
+function swimmerResult(
+  bbox: NormalizedBBox,
+  confidence: number,
+  center: { x: number; y: number },
+  history: DetectionHistoryEntry[],
+  now: number,
+): RiskResult {
+  const weakSignal = computeSubmersionScore(confidence)
+  const stillness = computeStasisScore(center, history, now)
+  const posture = postureExtremeness(bbox) * 100
+
+  const BASELINE = 35
   let score = clamp(
-    contributors.vertical +
-      contributors.arms +
-      contributors.submersion +
-      contributors.stasis,
+    BASELINE + stillness * 0.45 + posture * 0.3 + weakSignal * 0.2,
     0,
     100,
   )
 
-  // Recumbent on floor/deck: cap well below CAUTION even if individual signals misfire
-  if (torsoAngle !== null && torsoAngle < 40) {
-    score = Math.min(score, 25)
-  }
-
-  // Active movement (scooting, flailing) — not passive drowning stasis
-  if (history.length > 0) {
-    const threeSecondsAgo = now - 3000
-    const pastEntry = history.find((e) => e.timestamp <= threeSecondsAgo)
-    if (pastEntry) {
-      const displacement = averageDisplacement(landmarks, pastEntry.landmarks)
-      if (displacement > 0.012) {
-        score = Math.min(score, 35)
-      }
-    }
+  const displacement = averageCenterDisplacement(center, history, now, 2000)
+  if (Number.isFinite(displacement) && displacement > 0.09) {
+    score = Math.min(score, 30)
   }
 
   return {
     score,
     state: getRiskState(score),
-    contributors,
+    contributors: {
+      submersion: Math.round(weakSignal * 0.2),
+      stasis: Math.round(stillness * 0.45),
+      disappearance: 0,
+      distress: Math.round(BASELINE + posture * 0.3),
+    },
   }
+}
+
+export function computeRisk(
+  input: RiskInput,
+  now = performance.now(),
+): RiskResult {
+  const {
+    bbox,
+    confidence,
+    center,
+    isMissing,
+    missingSince,
+    nearestNeighborDist,
+    wasLoneSwimmer,
+    history,
+    zones,
+  } = input
+
+  const verdict = zoneVerdict(zones, center)
+
+  // Safe zone always wins — guaranteed no alert.
+  if (verdict === 'safe') return safeZoneResult()
+
+  // Monitor zone — calibrated aggressive detection.
+  if (verdict === 'monitor') {
+    return monitorZoneResult(
+      bbox,
+      confidence,
+      center,
+      history,
+      isMissing,
+      missingSince,
+      now,
+    )
+  }
+
+  if (isMissing) {
+    if (!wasLoneSwimmer) return SAFE
+    return disappearanceResult(missingSince, now)
+  }
+
+  if (!bbox) return SAFE
+
+  if (isSafeBystander(bbox, center, nearestNeighborDist)) return SAFE
+  if (!isLoneSwimmer(bbox, center, nearestNeighborDist)) return SAFE
+
+  return swimmerResult(bbox, confidence, center, history, now)
 }

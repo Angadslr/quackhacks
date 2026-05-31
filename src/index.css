@@ -1,13 +1,140 @@
 @import 'tailwindcss';
 
+@theme {
+  --color-guard-maroon: #3a1520;
+  --color-guard-maroon-deep: #1a0b10;
+  --color-guard-maroon-mid: #4d1c28;
+  --color-guard-maroon-light: #6d2a3c;
+  --color-guard-red: #ef4444;
+  --color-guard-red-dark: #b91c1c;
+  --color-guard-yellow: #fbbf24;
+  --color-guard-yellow-dark: #d97706;
+  --color-guard-cream: #fef9e7;
+  --color-guard-pool: #38bdf8;
+  --color-guard-white: #f8fafc;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #020617;
-  color: #f1f5f9;
+  background-color: #1a0b10;
+  color: var(--color-guard-white);
   font-family: system-ui, -apple-system, sans-serif;
 }
 
 #root {
   min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background-image: url('/pool-background.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+.app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(26, 11, 16, 0.55) 0%,
+    rgba(26, 11, 16, 0.35) 40%,
+    rgba(26, 11, 16, 0.5) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.guard-panel {
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--color-guard-maroon-light) 70%, white);
+  background-color: color-mix(in srgb, var(--color-guard-maroon-mid) 75%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--color-guard-red) 15%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.timeline-panel {
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--color-guard-maroon-light) 70%, white);
+  background-color: color-mix(in srgb, var(--color-guard-maroon-deep) 88%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.controls-bar {
+  min-height: 3.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--color-guard-maroon-light) 60%, white);
+  background-color: color-mix(in srgb, var(--color-guard-maroon-deep) 82%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.guard-btn-primary {
+  border-radius: 0.5rem;
+  background-color: var(--color-guard-red);
+  color: white;
+  font-weight: 500;
+  transition: background-color 0.15s;
+}
+
+.guard-btn-primary:hover:not(:disabled) {
+  background-color: var(--color-guard-red-dark);
+}
+
+.guard-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.drowning-alert-panel {
+  position: fixed;
+  left: max(
+    0.75rem,
+    calc((100vw - min(100vw * 0.8, 1020px)) / 2 - 12.25rem)
+  );
+  top: 5.25rem;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 11.5rem;
+  max-height: calc(100vh - 6rem);
+  padding: 1.25rem 1rem;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(254, 200, 200, 0.45);
+  background: rgba(185, 28, 28, 0.94);
+  text-align: left;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  pointer-events: auto;
+  isolation: isolate;
+}
+
+.drowning-alert-panel-noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  mix-blend-mode: overlay;
+}
+
+.drowning-alert-card-body {
+  position: relative;
+}
+
+.drowning-alert-card-actions {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
 }

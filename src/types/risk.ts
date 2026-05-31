@@ -1,10 +1,10 @@
 export type RiskState = 'SAFE' | 'CAUTION' | 'DISTRESS' | 'CRITICAL'
 
 export interface SignalBreakdown {
-  vertical: number
-  arms: number
   submersion: number
   stasis: number
+  disappearance: number
+  distress: number
 }
 
 export interface RiskResult {
@@ -13,9 +13,11 @@ export interface RiskResult {
   contributors: SignalBreakdown
 }
 
-export interface PoseHistoryEntry {
+export interface DetectionHistoryEntry {
   timestamp: number
-  landmarks: import('@mediapipe/tasks-vision').NormalizedLandmark[]
+  bbox: import('./detection').NormalizedBBox
+  confidence: number
+  center: { x: number; y: number }
 }
 
 export function getRiskState(score: number): RiskState {
@@ -28,12 +30,12 @@ export function getRiskState(score: number): RiskState {
 export function getSkeletonColor(state: RiskState): string {
   switch (state) {
     case 'SAFE':
-      return '#34d399'
+      return '#22c55e'
     case 'CAUTION':
-      return '#facc15'
+      return '#fbbf24'
     case 'DISTRESS':
     case 'CRITICAL':
-      return '#ef4444'
+      return '#dc2626'
   }
 }
 
@@ -45,27 +47,27 @@ export function getStateTailwind(state: RiskState): {
   switch (state) {
     case 'SAFE':
       return {
-        text: 'text-emerald-400',
-        border: 'border-emerald-500',
-        bg: 'bg-emerald-500/10',
+        text: 'text-guard-pool',
+        border: 'border-guard-pool',
+        bg: 'bg-guard-pool/10',
       }
     case 'CAUTION':
       return {
-        text: 'text-yellow-400',
-        border: 'border-yellow-500',
-        bg: 'bg-yellow-500/10',
+        text: 'text-guard-yellow',
+        border: 'border-guard-yellow',
+        bg: 'bg-guard-yellow/10',
       }
     case 'DISTRESS':
       return {
-        text: 'text-red-500',
-        border: 'border-red-600',
-        bg: 'bg-red-500/10',
+        text: 'text-guard-red',
+        border: 'border-guard-red',
+        bg: 'bg-guard-red/10',
       }
     case 'CRITICAL':
       return {
-        text: 'text-red-500',
-        border: 'border-red-600',
-        bg: 'bg-red-500/10',
+        text: 'text-guard-red',
+        border: 'border-guard-red',
+        bg: 'bg-guard-red/10',
       }
   }
 }
